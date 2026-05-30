@@ -1,0 +1,16 @@
+# Core dependencies
+yt-dlp>=2025.1.1
+openai-whisper>=20240930
+deep-translator>=1.11.4
+
+# PyTorch is installed automatically as a dependency of openai-whisper (CPU build).
+# For NVIDIA GPU acceleration, reinstall the CUDA build instead, e.g.:
+#   pip uninstall -y torch
+#   pip install torch --index-url https://download.pytorch.org/whl/cu126
+# Match the cu1XX number to your driver (see `nvidia-smi`).
+
+# NOTE: ffmpeg is required but is NOT a pip package.
+# Install it separately and add it to PATH:
+#   Windows: https://www.gyan.dev/ffmpeg/builds/
+#   Linux:   sudo apt install ffmpeg
+#   macOS:   brew install ffmpeg

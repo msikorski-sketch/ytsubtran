@@ -1,0 +1,1415 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Downloader z AI Napisami - Instrukcja Instalacji Windows</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            margin: -20px -20px 30px -20px;
+            text-align: center;
+            border-radius: 0 0 15px 15px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header .subtitle {
+            margin: 10px 0 0 0;
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        h2 {
+            color: #4a5568;
+            border-left: 5px solid #667eea;
+            padding-left: 15px;
+            margin-top: 40px;
+            font-size: 1.4em;
+        }
+
+        h3 {
+            color: #2d3748;
+            margin-top: 25px;
+            font-size: 1.2em;
+        }
+
+        .step {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            position: relative;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            top: -15px;
+            left: 20px;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .code-block {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .powershell {
+            background: #012456;
+            color: #ffffff;
+        }
+
+        .warning {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            border-left: 5px solid #f56565;
+            padding: 15px;
+            border-radius: 0 6px 6px 0;
+            margin: 15px 0;
+        }
+
+        .warning::before {
+            content: "⚠️ ";
+            font-weight: bold;
+            color: #e53e3e;
+        }
+
+        .tip {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            border-left: 5px solid #48bb78;
+            padding: 15px;
+            border-radius: 0 6px 6px 0;
+            margin: 15px 0;
+        }
+
+        .tip::before {
+            content: "💡 ";
+            font-weight: bold;
+            color: #38a169;
+        }
+
+        .success {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            border-left: 5px solid #48bb78;
+            padding: 15px;
+            border-radius: 0 6px 6px 0;
+            margin: 15px 0;
+        }
+
+        .success::before {
+            content: "✅ ";
+            font-weight: bold;
+            color: #38a169;
+        }
+
+        .examples {
+            background: #fffbf0;
+            border: 1px solid #f6e05e;
+            border-left: 5px solid #d69e2e;
+            padding: 15px;
+            border-radius: 0 6px 6px 0;
+            margin: 15px 0;
+        }
+
+        .examples::before {
+            content: "📝 ";
+            font-weight: bold;
+            color: #b7791f;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+        }
+
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background: #f7fafc;
+        }
+
+        .file-structure {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            margin: 15px 0;
+        }
+
+        ul, ol {
+            padding-left: 25px;
+        }
+
+        li {
+            margin: 5px 0;
+        }
+
+        .page-break {
+            page-break-before: always;
+        }
+
+        @media print {
+            .header {
+                margin: 0;
+                page-break-inside: avoid;
+            }
+
+            .step {
+                page-break-inside: avoid;
+            }
+
+            h2 {
+                page-break-after: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎬 YouTube Downloader z AI Napisami</h1>
+        <div class="subtitle">Pobieranie, transkrypcja i tłumaczenie napisów — kompletna instrukcja (Windows)</div>
+        <div class="subtitle">Wersja maj 2026</div>
+    </div>
+
+    <h2 id="spis">📋 Spis treści</h2>
+    <ul>
+        <li><a href="#wprowadzenie">Wprowadzenie — co potrafi skrypt</a></li>
+        <li><a href="#wymagania">Wymagania systemowe</a></li>
+        <li><a href="#instalacja">Instalacja krok po kroku</a></li>
+        <li><a href="#gpu">Przyspieszenie na karcie NVIDIA (GPU)</a></li>
+        <li><a href="#test">Test instalacji</a></li>
+        <li><a href="#parametry">Wszystkie parametry</a></li>
+        <li><a href="#polecenia">Gotowe polecenia (kopiuj-wklej)</a></li>
+        <li><a href="#modele">Modele Whisper — który wybrać</a></li>
+        <li><a href="#jakosc">Jak uzyskać najlepszą jakość</a></li>
+        <li><a href="#pliki">Pliki wynikowe i napisy SRT</a></li>
+        <li><a href="#problemy">Rozwiązywanie problemów</a></li>
+        <li><a href="#kod">Kod skryptu</a></li>
+    </ul>
+
+    <h2 id="wprowadzenie">🚀 Wprowadzenie — co potrafi skrypt</h2>
+    <ul>
+        <li>📥 <strong>Pobiera filmy z YouTube</strong> jako MP4 (najlepsza jakość) lub MP3 (samo audio)</li>
+        <li>📂 <strong>Działa też na plikach z dysku</strong> (parametr <code>--file</code>) — bez pobierania</li>
+        <li>🤖 <strong>Generuje napisy</strong> lokalnie, za pomocą Whisper AI (OpenAI)</li>
+        <li>🔁 <strong>Tłumaczy napisy</strong> na dowolny język (np. film po portugalsku → napisy po polsku) przez Google Translate</li>
+        <li>🌐 <strong>Sam wykrywa język</strong> oryginału (tryb <code>--source-lang auto</code>), próbkując kilka momentów nagrania</li>
+        <li>🛡️ <strong>Odporne pobieranie</strong> — sam instaluje/aktualizuje yt-dlp, próbuje wielu strategii, wznawia przerwane transfery, diagnozuje błędy</li>
+        <li>⚡ <strong>Obsługuje GPU</strong> (NVIDIA/CUDA) — wielokrotnie szybsza transkrypcja</li>
+        <li>🎯 <strong>Dba o jakość</strong> — parametry ograniczające „halucynacje" Whispera i opcja podpowiedzi kontekstowej (<code>--prompt</code>)</li>
+    </ul>
+
+    <div class="tip">
+        <strong>Jak to działa w skrócie?</strong> Whisper zamienia mowę na tekst w języku
+        oryginału (transkrypcja). Jeśli włączysz tłumaczenie, każdy segment napisów jest dodatkowo
+        przekładany na język docelowy. Zapisywane są obie wersje: oryginał i tłumaczenie.
+    </div>
+
+    <h2 id="wymagania">💻 Wymagania systemowe</h2>
+    <table>
+        <tr><th>Komponent</th><th>Minimalnie</th><th>Zalecane</th></tr>
+        <tr><td>System</td><td>Windows 10</td><td>Windows 10/11 (64-bit)</td></tr>
+        <tr><td>RAM</td><td>4 GB</td><td>8 GB lub więcej</td></tr>
+        <tr><td>Dysk</td><td>3 GB</td><td>8 GB (modele Whisper + filmy)</td></tr>
+        <tr><td>GPU (opcjonalnie)</td><td>—</td><td>NVIDIA z 6–8 GB VRAM (duże przyspieszenie)</td></tr>
+        <tr><td>Internet</td><td>do pobierania i tłumaczenia</td><td>szybkie łącze</td></tr>
+    </table>
+
+    <div class="page-break"></div>
+
+    <h2 id="instalacja">🛠️ Instalacja krok po kroku</h2>
+
+    <div class="step">
+        <div class="step-number">1</div>
+        <h3>Zainstaluj Python</h3>
+        <p>Pobierz z <strong>https://www.python.org/downloads/</strong> i uruchom instalator.</p>
+        <div class="warning"><strong>WAŻNE:</strong> zaznacz <strong>„Add Python to PATH"</strong> na dole okna instalatora!</div>
+        <p>Sprawdź w PowerShell (Win + R → <code>powershell</code> → Enter):</p>
+        <div class="code-block powershell">python --version</div>
+        <p>Powinno pokazać np. <code>Python 3.13.x</code>. Jeśli <code>python</code> nie działa, spróbuj <code>py</code>.</p>
+    </div>
+
+    <div class="step">
+        <div class="step-number">2</div>
+        <h3>Utwórz folder i środowisko wirtualne (venv)</h3>
+        <div class="code-block powershell">cd C:\
+mkdir yt_downloader
+cd yt_downloader
+python -m venv .venv
+.\.venv\Scripts\activate</div>
+        <p>Po aktywacji zobaczysz <code>(.venv)</code> przed znakiem zachęty. Venv izoluje pakiety od reszty systemu.</p>
+        <div class="tip">Środowisko aktywujesz <strong>za każdym razem</strong> przed użyciem skryptu: <code>.\.venv\Scripts\activate</code></div>
+    </div>
+
+    <div class="step">
+        <div class="step-number">3</div>
+        <h3>Zapisz skrypt</h3>
+        <p>Skopiuj kod z sekcji <a href="#kod">„Kod skryptu"</a> (na końcu) do pliku <code>youtube_downloader.py</code> w folderze projektu.</p>
+    </div>
+
+    <div class="step">
+        <div class="step-number">4</div>
+        <h3>Zaktualizuj pip i zainstaluj pakiety</h3>
+        <div class="code-block powershell">python -m pip install --upgrade pip
+pip install -U yt-dlp
+pip install -U openai-whisper
+pip install -U deep-translator</div>
+        <ul>
+            <li><strong>yt-dlp</strong> — pobieranie z YouTube (skrypt potrafi też zainstalować/zaktualizować je sam)</li>
+            <li><strong>openai-whisper</strong> — transkrypcja mowy (instaluje też PyTorch; może potrwać kilka minut)</li>
+            <li><strong>deep-translator</strong> — tłumaczenie napisów (Google Translate, bez klucza API)</li>
+        </ul>
+    </div>
+
+    <div class="step">
+        <div class="step-number">5</div>
+        <h3>Zainstaluj ffmpeg</h3>
+        <p>ffmpeg jest wymagany do przetwarzania audio/wideo.</p>
+        <ol>
+            <li>Pobierz z <strong>https://www.gyan.dev/ffmpeg/builds/</strong> → „ffmpeg-release-essentials.zip"</li>
+            <li>Rozpakuj do <code>C:\ffmpeg\</code> (tak, aby istniał <code>C:\ffmpeg\bin\ffmpeg.exe</code>)</li>
+            <li>Dodaj <code>C:\ffmpeg\bin</code> do zmiennej PATH: Win + R → <code>sysdm.cpl</code> → „Zaawansowane" → „Zmienne środowiskowe" → edytuj „Path" → „Nowy" → wpisz ścieżkę</li>
+            <li>Zamknij i otwórz ponownie PowerShell, sprawdź: <code>ffmpeg -version</code></li>
+        </ol>
+    </div>
+
+    <h2 id="gpu">⚡ Przyspieszenie na karcie NVIDIA (GPU)</h2>
+    <p>Domyślnie PyTorch działa na procesorze (CPU). Duże modele (<code>medium</code>, <code>large-v3</code>,
+    <code>turbo</code>) są wtedy wolne — długi film może liczyć się nawet godzinami. Jeśli masz kartę
+    <strong>NVIDIA</strong>, zainstaluj wersję PyTorch z obsługą CUDA:</p>
+    <div class="code-block powershell">pip uninstall -y torch
+pip install torch --index-url https://download.pytorch.org/whl/cu126</div>
+    <p>Sprawdź, czy GPU jest widoczne (ma wypisać <code>True</code>):</p>
+    <div class="code-block powershell">python -c "import torch; print(torch.cuda.is_available())"</div>
+    <div class="tip">
+        Skrypt <strong>automatycznie wykryje GPU</strong>, pokaże jego nazwę i ilość VRAM, użyje go do
+        transkrypcji (z <code>fp16</code> dla szybkości), a gdyby zabrakło pamięci — sam przełączy się
+        awaryjnie na CPU.
+    </div>
+    <div class="warning">
+        <strong>Dobór wersji CUDA i VRAM.</strong> Numer <code>cu1XX</code> dopasuj do swojego sterownika
+        (sprawdź poleceniem <code>nvidia-smi</code> — pole „CUDA Version"); zwykle działa
+        <code>cu121</code>, <code>cu124</code>, <code>cu126</code> lub <code>cu128</code>.
+        Model <code>large-v3</code> potrzebuje ~10 GB VRAM — na kartach 8 GB (np. RTX 4060 Ti) lepszym
+        wyborem jest <code>turbo</code> (jakość ~large-v3, mieści się w pamięci) lub <code>medium</code>.
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2 id="test">✅ Test instalacji</h2>
+    <div class="code-block powershell"># Aktywuj środowisko
+cd C:\yt_downloader
+.\.venv\Scripts\activate
+
+# Sprawdź komponenty
+python -m yt_dlp --version
+python -c "import whisper; print('Whisper OK')"
+python -c "from deep_translator import GoogleTranslator; print('Translator OK')"
+ffmpeg -version
+
+# Test pełny: pobierz film i wygeneruj polskie napisy
+python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
+    <div class="success">
+        Jeśli wszystko działa, skrypt pobierze film (MP4), pobierze model Whisper (przy pierwszym
+        użyciu) i utworzy pliki napisów <code>.srt</code> oraz <code>.txt</code>.
+    </div>
+
+    <h2 id="parametry">⚙️ Wszystkie parametry</h2>
+    <table>
+        <tr><th>Parametr</th><th>Opis</th><th>Wartości / przykład</th></tr>
+        <tr><td><strong>URL</strong></td><td>Link do filmu YouTube (w cudzysłowach!)</td><td>wymagany, chyba że używasz <code>--file</code></td></tr>
+        <tr><td><code>--file</code></td><td>Plik wideo/audio już na dysku — pomija pobieranie</td><td>"C:\filmy\wideo.mp4"</td></tr>
+        <tr><td><code>--format</code></td><td>Format pobierania z YouTube</td><td>mp4 (domyślny), mp3</td></tr>
+        <tr><td><code>--subs</code></td><td>Włącz generowanie napisów (flaga, tylko dla MP4)</td><td>bez wartości</td></tr>
+        <tr><td><code>--source-lang</code></td><td>Język audio w nagraniu (do transkrypcji)</td><td>pl (domyślny), en, es, pt, de... lub <code>auto</code></td></tr>
+        <tr><td><code>--translate-to</code></td><td>Język docelowy napisów (włącza tłumaczenie)</td><td>np. pl (domyślnie wyłączone)</td></tr>
+        <tr><td><code>--model</code></td><td>Model Whisper (dowolna nazwa obsługiwana przez whisper)</td><td>tiny, base, small, medium, large, large-v3, turbo</td></tr>
+        <tr><td><code>--prompt</code></td><td>Podpowiedź kontekstowa: nazwy własne, terminologia, pisownia</td><td>"Pomni, Ragatha, Jax, Caine"</td></tr>
+    </table>
+    <div class="tip">
+        <strong>Plik lokalny vs YouTube:</strong> przy <code>--file</code> napisy generują się od razu
+        (bez pobierania), niezależnie od formatu pliku — działa na <code>.mp4</code>, <code>.mkv</code>,
+        <code>.mp3</code> itd. Przy linku YouTube napisy generują się tylko dla formatu MP4.
+    </div>
+
+    <h2 id="polecenia">📝 Gotowe polecenia (kopiuj-wklej)</h2>
+    <p>W poleceniach zastąp <code>ADRES</code> linkiem do filmu, a ścieżki plików swoimi. Linki i ścieżki
+    ze spacjami zawsze w cudzysłowach.</p>
+
+    <h3>Pobieranie z YouTube</h3>
+    <div class="examples">
+        <strong>Film w MP4 (najlepsza jakość):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py "ADRES"</div>
+    </div>
+    <div class="examples">
+        <strong>Samo audio w MP3:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py "ADRES" --format mp3</div>
+    </div>
+    <div class="examples">
+        <strong>Film + napisy w języku oryginału (np. polski film):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py "ADRES" --subs</div>
+    </div>
+    <div class="examples">
+        <strong>Film obcojęzyczny + tłumaczenie napisów na polski (np. hiszpański):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py "ADRES" --subs --source-lang es --translate-to pl</div>
+    </div>
+    <div class="examples">
+        <strong>Nie wiesz, w jakim języku jest film? Auto-wykrywanie + tłumaczenie na PL:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py "ADRES" --subs --source-lang auto --translate-to pl</div>
+    </div>
+
+    <h3>Plik z dysku (bez pobierania)</h3>
+    <div class="examples">
+        <strong>Plik lokalny → napisy w oryginale:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang en</div>
+    </div>
+    <div class="examples">
+        <strong>Plik lokalny obcojęzyczny → tłumaczenie na polski:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl</div>
+    </div>
+
+    <h3>Najwyższa jakość</h3>
+    <div class="examples">
+        <strong>GPU + szybki model wysokiej jakości (turbo) + nazwy własne w podpowiedzi:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl --model turbo --prompt "Pomni, Ragatha, Jax, Caine, Gangle, Kinger, Zooble"</div>
+    </div>
+    <div class="examples">
+        <strong>Maksymalna dokładność (large-v3 — wymaga ~10 GB VRAM lub cierpliwości na CPU):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl --model large-v3</div>
+    </div>
+
+    <h2 id="modele">🧠 Modele Whisper — który wybrać</h2>
+    <table>
+        <tr><th>Model</th><th>RAM/VRAM</th><th>Szybkość</th><th>Jakość</th><th>Kiedy używać</th></tr>
+        <tr><td><strong>tiny</strong></td><td>~1 GB</td><td>najszybszy</td><td>słaba</td><td>szybkie testy</td></tr>
+        <tr><td><strong>base</strong></td><td>~1 GB</td><td>szybki</td><td>przeciętna</td><td>proste nagrania mowy</td></tr>
+        <tr><td><strong>small</strong></td><td>~2 GB</td><td>średni</td><td>dobra</td><td>ważniejsze transkrypcje</td></tr>
+        <tr style="background:#e6f3ff;"><td><strong>turbo</strong> ⭐</td><td>~6 GB</td><td>szybki</td><td>bardzo dobra</td><td><strong>najlepszy kompromis, zwłaszcza na GPU 8 GB</strong></td></tr>
+        <tr><td><strong>medium</strong></td><td>~5 GB</td><td>wolny</td><td>bardzo dobra</td><td>realne filmy bez mocnego GPU</td></tr>
+        <tr><td><strong>large-v3</strong></td><td>~10 GB</td><td>najwolniejszy</td><td>najlepsza</td><td>maksymalna dokładność</td></tr>
+    </table>
+    <div class="tip">
+        Nazwę modelu podajesz dowolną, jaką obsługuje Whisper — także nowsze, które pojawią się w
+        przyszłości. Gdy wyjdzie nowy model, wystarczy <code>pip install -U openai-whisper</code> i
+        <code>--model nowa-nazwa</code>; skrypt nie wymaga zmian.
+    </div>
+
+    <h2 id="jakosc">🎯 Jak uzyskać najlepszą jakość</h2>
+    <p>Dźwignie jakości, od najważniejszej:</p>
+    <ol>
+        <li><strong>Poprawny język</strong> — to najczęstsza przyczyna złych napisów. Jeśli film jest
+        dubbingowany (np. ma angielską czołówkę, a dialog po portugalsku), podaj język wprost:
+        <code>--source-lang pt</code>. Whisper przy złym języku „transkrybuje" mowę fonetycznie i
+        powstaje bełkot. Tryb <code>auto</code> próbkuje teraz kilka momentów, więc rzadziej się myli,
+        ale jawne podanie języka jest najpewniejsze.</li>
+        <li><strong>Większy model</strong> — <code>turbo</code> lub <code>large-v3</code> zamiast
+        <code>base</code>.</li>
+        <li><strong>Podpowiedź <code>--prompt</code></strong> — podaj imiona postaci, nazwy własne i
+        terminologię (najlepiej w języku audio). Wtedy pisownia nazw jest poprawna.</li>
+        <li><strong>GPU</strong> — nie zmienia jakości, ale sprawia, że duże modele stają się praktyczne
+        czasowo (patrz sekcja <a href="#gpu">GPU</a>).</li>
+    </ol>
+    <div class="warning">
+        Tłumaczenie pracuje na transkrypcji — jeśli transkrypcja jest zła (np. zły język), tłumaczenie
+        też będzie złe. Najpierw zadbaj o dobrą transkrypcję.
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2 id="pliki">📄 Pliki wynikowe i napisy SRT</h2>
+    <p>Pliki powstają obok źródła. Przyrostek to kod języka, np. <code>_PL</code>, <code>_EN</code>,
+    <code>_PT</code>. Przy tłumaczeniu zapisywane są <strong>obie</strong> wersje:</p>
+    <div class="file-structure">Tytuł_filmu.mp4              # pobrany film (lub Twój plik wejściowy)
+Tytuł_filmu_PT.srt           # napisy w oryginale (tu: portugalski)
+Tytuł_filmu_PT.txt           # pełna transkrypcja tekstowa (oryginał)
+Tytuł_filmu_PL.srt           # napisy przetłumaczone (tu: polski)
+Tytuł_filmu_PL.txt           # pełny tekst tłumaczenia</div>
+    <h3>Jak użyć napisów SRT?</h3>
+    <ul>
+        <li><strong>VLC:</strong> Napisy → Dodaj plik napisów → wybierz <code>.srt</code></li>
+        <li><strong>Automatycznie:</strong> trzymaj plik <code>.srt</code> w tym samym folderze i o tej
+        samej nazwie co film — większość odtwarzaczy wczyta go sam</li>
+    </ul>
+
+    <h2 id="problemy">🔧 Rozwiązywanie problemów</h2>
+
+    <h3>„python nie jest rozpoznawany jako polecenie"</h3>
+    <p>Użyj <code>py</code> zamiast <code>python</code>, albo zainstaluj Python ponownie z opcją „Add to PATH".</p>
+
+    <h3>Pobieranie zawodzi: „HTTP Error 403" / „Unable to extract"</h3>
+    <p>Skrypt sam próbuje wielu strategii, a przy takim błędzie <strong>automatycznie aktualizuje yt-dlp
+    i ponawia</strong> (YouTube często zmienia coś po swojej stronie). Jeśli mimo to nie działa —
+    sprawdź film w przeglądarce lub zaktualizuj ręcznie: <code>pip install -U yt-dlp</code>.</p>
+
+    <h3>„Sign in to confirm your age" / „Confirm you're not a bot"</h3>
+    <p>Wideo wymaga zalogowania. Pobierz, używając ciasteczek z przeglądarki:</p>
+    <div class="code-block powershell">python -m yt_dlp --cookies-from-browser chrome "ADRES"</div>
+
+    <h3>„HTTP Error 429 Too Many Requests"</h3>
+    <p>YouTube ogranicza liczbę żądań — odczekaj kilka minut lub zmień sieć / włącz VPN.</p>
+
+    <h3>Blokada regionalna</h3>
+    <p>Skrypt próbuje obejścia automatycznie (<code>--geo-bypass</code>). Jeśli nie pomoże — włącz VPN.</p>
+
+    <h3>Napisy to bełkot / powtórzenia / zły język</h3>
+    <ul>
+        <li>Najczęściej zły wykryty język — podaj go wprost, np. <code>--source-lang pt</code></li>
+        <li>Użyj większego modelu: <code>--model turbo</code> lub <code>large-v3</code></li>
+        <li>Dodaj <code>--prompt</code> z nazwami własnymi</li>
+    </ul>
+
+    <h3>Brak pamięci VRAM (GPU) — „out of memory"</h3>
+    <p>Skrypt sam przełączy się na CPU, ale lepiej wybrać mniejszy model: <code>--model turbo</code>
+    lub <code>medium</code>. Zamknij też aplikacje zużywające VRAM (przeglądarki, gry, inne modele AI).</p>
+
+    <h3>Whisper / transkrypcja bardzo wolna</h3>
+    <p>Działasz na CPU. Zainstaluj PyTorch z CUDA (sekcja <a href="#gpu">GPU</a>) albo użyj mniejszego
+    modelu (<code>small</code>/<code>base</code>).</p>
+
+    <h3>„Brak biblioteki do tłumaczenia"</h3>
+    <div class="code-block powershell">pip install -U deep-translator</div>
+
+    <div class="page-break"></div>
+
+    <h2 id="kod">💾 Kod skryptu</h2>
+    <p>Skopiuj poniższy kod do pliku <code>youtube_downloader.py</code>:</p>
+    <div class="code-block" style="font-size: 0.7em; max-height: 400px; overflow-y: auto;">
+import re
+import subprocess
+import os
+import argparse
+import sys
+import shutil
+
+# Wymuś UTF-8 na wyjściu konsoli (Windows) — inaczej polskie znaki (ł, ż...)
+# i emoji powodują UnicodeEncodeError przy domyślnym kodowaniu cp1252.
+try:
+    sys.stdout.reconfigure(encoding=&#x27;utf-8&#x27;)
+    sys.stderr.reconfigure(encoding=&#x27;utf-8&#x27;)
+except (AttributeError, ValueError):
+    pass
+
+
+def extract_url(text):
+    &quot;&quot;&quot;Czyszczenie tekstu i wyciąganie linku YouTube&quot;&quot;&quot;
+    clean_text = re.sub(r&#x27;[\[\]\(\)]&#x27;, &#x27;&#x27;, text).strip()
+    pattern = r&#x27;(https?://(?:www\.)?youtube\.com/watch\?v=[0-9A-Za-z_-]{11})&#x27;
+    match = re.search(pattern, clean_text)
+    if match:
+        return match.group(1)
+    return clean_text
+
+
+def check_whisper_installed():
+    &quot;&quot;&quot;Sprawdza czy Whisper jest zainstalowany&quot;&quot;&quot;
+    try:
+        import whisper
+        return True, whisper.__version__
+    except ImportError:
+        return False, None
+
+
+def check_ffmpeg_installed():
+    &quot;&quot;&quot;Sprawdza czy ffmpeg jest zainstalowany&quot;&quot;&quot;
+    return shutil.which(&#x27;ffmpeg&#x27;) is not None
+
+
+def check_translator_installed():
+    &quot;&quot;&quot;Sprawdza czy biblioteka deep-translator jest zainstalowana&quot;&quot;&quot;
+    try:
+        import deep_translator  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def show_translator_installation_guide():
+    &quot;&quot;&quot;Wyświetla instrukcję instalacji deep-translator&quot;&quot;&quot;
+    print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
+    print(&#x27;⚠️  BIBLIOTEKA DO TŁUMACZENIA NIE JEST ZAINSTALOWANA&#x27;)
+    print(&#x27;=&#x27; * 70)
+    print(&#x27;\nDo tłumaczenia napisów potrzebna jest biblioteka deep-translator&#x27;)
+    print(&#x27;(korzysta z darmowego Google Translate, bez klucza API).\n&#x27;)
+    print(&#x27;📦 INSTALACJA:\n&#x27;)
+    print(&#x27;   pip install -U deep-translator\n&#x27;)
+    print(&#x27;Po instalacji uruchom skrypt ponownie.&#x27;)
+    print(&#x27;=&#x27; * 70)
+
+
+# Nazwy języków dla czytelnych komunikatów
+LANGUAGE_NAMES = {
+    &#x27;auto&#x27;: &#x27;auto-wykrywanie&#x27;,
+    &#x27;pl&#x27;: &#x27;polski&#x27;, &#x27;en&#x27;: &#x27;angielski&#x27;, &#x27;es&#x27;: &#x27;hiszpański&#x27;, &#x27;de&#x27;: &#x27;niemiecki&#x27;,
+    &#x27;fr&#x27;: &#x27;francuski&#x27;, &#x27;it&#x27;: &#x27;włoski&#x27;, &#x27;pt&#x27;: &#x27;portugalski&#x27;, &#x27;ru&#x27;: &#x27;rosyjski&#x27;,
+    &#x27;uk&#x27;: &#x27;ukraiński&#x27;, &#x27;cs&#x27;: &#x27;czeski&#x27;, &#x27;sk&#x27;: &#x27;słowacki&#x27;, &#x27;nl&#x27;: &#x27;holenderski&#x27;,
+    &#x27;ja&#x27;: &#x27;japoński&#x27;, &#x27;zh&#x27;: &#x27;chiński&#x27;, &#x27;ko&#x27;: &#x27;koreański&#x27;, &#x27;ar&#x27;: &#x27;arabski&#x27;,
+    &#x27;tr&#x27;: &#x27;turecki&#x27;, &#x27;sv&#x27;: &#x27;szwedzki&#x27;, &#x27;no&#x27;: &#x27;norweski&#x27;, &#x27;da&#x27;: &#x27;duński&#x27;,
+    &#x27;fi&#x27;: &#x27;fiński&#x27;, &#x27;hu&#x27;: &#x27;węgierski&#x27;, &#x27;ro&#x27;: &#x27;rumuński&#x27;, &#x27;el&#x27;: &#x27;grecki&#x27;,
+}
+
+
+def lang_name(code):
+    &quot;&quot;&quot;Zwraca czytelną nazwę języka dla podanego kodu&quot;&quot;&quot;
+    return LANGUAGE_NAMES.get(code, code)
+
+
+def translate_texts(texts, target_lang, source_lang=&#x27;auto&#x27;):
+    &quot;&quot;&quot;
+    Tłumaczy listę tekstów na język docelowy używając Google Translate.
+
+    Zwraca listę przetłumaczonych tekstów (tej samej długości co wejście).
+    Jeśli pojedynczy segment się nie przetłumaczy, zostaje oryginalny tekst.
+    &quot;&quot;&quot;
+    from deep_translator import GoogleTranslator
+
+    # Google używa &#x27;auto&#x27; do auto-wykrywania języka źródłowego
+    translator = GoogleTranslator(source=source_lang or &#x27;auto&#x27;, target=target_lang)
+
+    translated = []
+    total = len(texts)
+    for i, text in enumerate(texts, 1):
+        original = text.strip()
+        if not original:
+            translated.append(text)
+            continue
+        try:
+            result = translator.translate(original)
+            translated.append(result if result else original)
+        except Exception as e:
+            print(f&#x27;   ⚠️  Segment {i}/{total} nieprzetłumaczony ({e}) — zostaje oryginał&#x27;)
+            translated.append(original)
+
+        # Postęp co 10 segmentów (lub na końcu)
+        if i % 10 == 0 or i == total:
+            print(f&#x27;   ...przetłumaczono {i}/{total} segmentów&#x27;)
+
+    return translated
+
+
+def write_srt(srt_file, segments, texts=None):
+    &quot;&quot;&quot;
+    Zapisuje plik napisów SRT.
+
+    - segments: lista segmentów Whisper (zawierają &#x27;start&#x27;, &#x27;end&#x27;, &#x27;text&#x27;)
+    - texts: opcjonalna lista tekstów nadpisująca &#x27;text&#x27; z segmentów
+             (używana dla wersji przetłumaczonej)
+    &quot;&quot;&quot;
+    with open(srt_file, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+        for i, segment in enumerate(segments, 1):
+            start = format_timestamp_srt(segment[&#x27;start&#x27;])
+            end = format_timestamp_srt(segment[&#x27;end&#x27;])
+            text = (texts[i - 1] if texts is not None else segment[&#x27;text&#x27;]).strip()
+
+            f.write(f&#x27;{i}\n&#x27;)
+            f.write(f&#x27;{start} --&gt; {end}\n&#x27;)
+            f.write(f&#x27;{text}\n\n&#x27;)
+
+
+def show_whisper_installation_guide():
+    &quot;&quot;&quot;Wyświetla instrukcję instalacji Whisper&quot;&quot;&quot;
+    print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
+    print(&#x27;⚠️  WHISPER NIE JEST ZAINSTALOWANY&#x27;)
+    print(&#x27;=&#x27; * 70)
+    print(&#x27;\nWhisper to darmowy model AI od OpenAI do transkrypcji audio.&#x27;)
+    print(&#x27;Działa lokalnie (offline) i doskonale obsługuje język polski!\n&#x27;)
+
+    print(&#x27;📦 INSTALACJA WHISPER:\n&#x27;)
+    print(&#x27;1. Zainstaluj Whisper:&#x27;)
+    print(&#x27;   pip install -U openai-whisper\n&#x27;)
+
+    print(&#x27;2. Zainstaluj ffmpeg (jeśli jeszcze nie masz):\n&#x27;)
+    print(&#x27;   Linux/Ubuntu:&#x27;)
+    print(&#x27;   sudo apt update &amp;&amp; sudo apt install ffmpeg\n&#x27;)
+    print(&#x27;   Windows:&#x27;)
+    print(&#x27;   - Pobierz z: https://ffmpeg.org/download.html&#x27;)
+    print(&#x27;   - Rozpakuj i dodaj do PATH\n&#x27;)
+    print(&#x27;   macOS:&#x27;)
+    print(&#x27;   brew install ffmpeg\n&#x27;)
+
+    print(&#x27;3. Po instalacji uruchom skrypt ponownie z parametrem --subs\n&#x27;)
+    print(&#x27;=&#x27; * 70)
+
+
+def detect_language_robust(model, audio_path, fractions=(0.15, 0.4, 0.65)):
+    &quot;&quot;&quot;
+    Wykrywa język mowy próbkując KILKA momentów nagrania (a nie tylko pierwsze
+    30 s, jak domyślnie Whisper). Dzięki temu czołówka/intro w innym języku nie
+    zafałszowuje wyniku. Zwraca: (kod_języka, pewność 0..1).
+    &quot;&quot;&quot;
+    import whisper
+
+    audio = whisper.load_audio(audio_path)
+    sr = whisper.audio.SAMPLE_RATE
+    window = whisper.audio.N_SAMPLES  # 30 s materiału
+    total = len(audio)
+    n_mels = model.dims.n_mels
+
+    if total &lt;= window:
+        positions = [0]
+    else:
+        positions = [min(int(f * total), total - window) for f in fractions]
+
+    scores = {}
+    for pos in positions:
+        segment = whisper.pad_or_trim(audio[pos:pos + window])
+        mel = whisper.log_mel_spectrogram(segment, n_mels=n_mels).to(model.device)
+        _, probs = model.detect_language(mel)
+        for lang, p in probs.items():
+            scores[lang] = scores.get(lang, 0.0) + p
+
+    best = max(scores, key=scores.get)
+    confidence = scores[best] / len(positions)
+    return best, confidence
+
+
+def pick_device():
+    &quot;&quot;&quot;
+    Wybiera urządzenie obliczeniowe dla Whisper: GPU (CUDA), jeśli dostępne,
+    inaczej CPU. Zwraca: (device, czytelny_opis).
+    &quot;&quot;&quot;
+    try:
+        import torch
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            return &#x27;cuda&#x27;, f&#x27;GPU: {name} ({total:.1f} GB VRAM)&#x27;
+    except Exception:
+        pass
+    return &#x27;cpu&#x27;, &#x27;CPU (GPU niedostępne)&#x27;
+
+
+def generate_subtitles_with_whisper(video_file, model_size=&#x27;base&#x27;, source_lang=&#x27;pl&#x27;,
+                                    translate_to=None, initial_prompt=None):
+    &quot;&quot;&quot;
+    Generuje napisy używając Whisper, opcjonalnie z tłumaczeniem.
+
+    Parametry:
+    - video_file: ścieżka do pliku wideo
+    - model_size: nazwa modelu Whisper (tiny, base, small, medium, large,
+                  large-v3, turbo... — dowolna obsługiwana przez whisper)
+    - source_lang: język audio w nagraniu (np. &#x27;pl&#x27;, &#x27;es&#x27;, &#x27;en&#x27;) lub &#x27;auto&#x27;
+                   do automatycznego wykrycia przez Whisper
+    - translate_to: docelowy język napisów (np. &#x27;pl&#x27;). Jeśli None, napisy
+                    pozostają w języku oryginału (sama transkrypcja).
+    - initial_prompt: podpowiedź kontekstowa dla Whisper (nazwy własne,
+                      terminologia) — poprawia dokładność i pisownię.
+    &quot;&quot;&quot;
+    print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
+    print(&#x27;🎙️  GENEROWANIE NAPISÓW Z WHISPER&#x27;)
+    print(&#x27;=&#x27; * 70)
+
+    # Sprawdź czy Whisper jest zainstalowany
+    whisper_installed, version = check_whisper_installed()
+    if not whisper_installed:
+        show_whisper_installation_guide()
+        return False
+
+    print(f&#x27;✓ Whisper zainstalowany (wersja: {version})&#x27;)
+
+    # Sprawdź czy ffmpeg jest zainstalowany
+    if not check_ffmpeg_installed():
+        print(&#x27;✗ ffmpeg nie jest zainstalowany!&#x27;)
+        print(&#x27;  Zainstaluj ffmpeg, aby Whisper mógł przetwarzać audio.&#x27;)
+        return False
+
+    print(&#x27;✓ ffmpeg zainstalowany&#x27;)
+
+    # Jeśli mamy tłumaczyć — sprawdź bibliotekę tłumaczącą zanim ruszy transkrypcja
+    if translate_to and translate_to != source_lang:
+        if not check_translator_installed():
+            show_translator_installation_guide()
+            return False
+        print(&#x27;✓ deep-translator zainstalowany&#x27;)
+
+    # Import Whisper
+    try:
+        import whisper
+    except ImportError:
+        show_whisper_installation_guide()
+        return False
+
+    # Sprawdź czy plik istnieje
+    if not os.path.exists(video_file):
+        print(f&#x27;✗ Nie znaleziono pliku: {video_file}&#x27;)
+        return False
+
+    print(f&#x27;\n📁 Plik wideo: {video_file}&#x27;)
+    print(f&#x27;🤖 Model Whisper: {model_size}&#x27;)
+    print(f&#x27;🌍 Język audio (transkrypcja): {lang_name(source_lang)}&#x27;)
+    if translate_to and translate_to != source_lang:
+        print(f&#x27;🔁 Tłumaczenie napisów na: {lang_name(translate_to)}&#x27;)
+    print()
+
+    # Informacja o modelach
+    model_info = {
+        &#x27;tiny&#x27;: &#x27;~1 GB RAM, najszybszy, słaba jakość (tylko do szybkich testów)&#x27;,
+        &#x27;base&#x27;: &#x27;~1 GB RAM, szybki, przeciętna jakość&#x27;,
+        &#x27;small&#x27;: &#x27;~2 GB RAM, dobra jakość&#x27;,
+        &#x27;medium&#x27;: &#x27;~5 GB RAM, bardzo dobra jakość (zalecany do realnych filmów)&#x27;,
+        &#x27;large&#x27;: &#x27;~10 GB RAM, najlepsza jakość, najwolniejszy&#x27;,
+        &#x27;large-v2&#x27;: &#x27;~10 GB RAM, najlepsza jakość (wariant v2)&#x27;,
+        &#x27;large-v3&#x27;: &#x27;~10 GB RAM, najlepsza jakość (najnowszy duży model)&#x27;,
+        &#x27;turbo&#x27;: &#x27;~6 GB RAM, jakość zbliżona do large-v3, ale dużo szybszy&#x27;,
+    }
+    print(f&#x27;ℹ️  {model_info.get(model_size, &quot;model niestandardowy/nowy — używam jak podano&quot;)}\n&#x27;)
+
+    if initial_prompt:
+        print(f&#x27;📝 Podpowiedź kontekstowa: &quot;{initial_prompt}&quot;\n&#x27;)
+
+    # Podpowiedź: małe modele słabo radzą sobie z muzyką/wieloma głosami
+    if model_size in (&#x27;tiny&#x27;, &#x27;base&#x27;):
+        print(&#x27;💡 Wskazówka: dla filmów z muzyką, wieloma rozmówcami lub gwarą model &#x27;
+              f&#x27;&quot;{model_size}&quot; może dawać błędy i powtórzenia.&#x27;)
+        print(&#x27;   Dla lepszej jakości użyj: --model medium / large-v3 / turbo\n&#x27;)
+
+    # Wybór urządzenia: GPU jeśli dostępne (dużo szybciej), inaczej CPU
+    device, device_desc = pick_device()
+    print(f&#x27;🖥️  Urządzenie obliczeniowe: {device_desc}&#x27;)
+    if device == &#x27;cpu&#x27;:
+        print(&#x27;   (Masz kartę NVIDIA? Zainstaluj torch z CUDA, aby liczyć na GPU — &#x27;
+              &#x27;kilkukrotnie szybciej.)&#x27;)
+    print()
+
+    try:
+        # Załaduj model na wybrane urządzenie
+        print(f&#x27;⏳ Ładowanie modelu Whisper ({model_size}) na {device.upper()}...&#x27;)
+        print(&#x27;   (Przy pierwszym użyciu model zostanie pobrany - może to chwilę potrwać)&#x27;)
+        try:
+            model = whisper.load_model(model_size, device=device)
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if &#x27;out of memory&#x27; in msg or &#x27;cuda&#x27; in msg:
+                # Za mało VRAM na ten model — spróbuj awaryjnie na CPU
+                print(f&#x27;⚠️  Nie udało się załadować &quot;{model_size}&quot; na GPU ({e}).&#x27;)
+                print(&#x27;   Przełączam na CPU. Dla GPU wybierz mniejszy model (np. turbo lub medium).&#x27;)
+                device = &#x27;cpu&#x27;
+                model = whisper.load_model(model_size, device=device)
+            else:
+                # Nieznana nazwa modelu — pokaż dostępne i przerwij czytelnie
+                available = &#x27;, &#x27;.join(whisper.available_models())
+                print(f&#x27;✗ Nie można załadować modelu &quot;{model_size}&quot;: {e}&#x27;)
+                print(f&#x27;  Dostępne modele w tej wersji whisper: {available}&#x27;)
+                print(&#x27;  (Aby mieć najnowsze modele, zaktualizuj: pip install -U openai-whisper)&#x27;)
+                return False
+        print(&#x27;✓ Model załadowany\n&#x27;)
+
+        # Wykrywanie języka (przy &#x27;auto&#x27;) — próbkując kilka momentów, by intro
+        # w innym języku nie zafałszowało wyniku
+        if source_lang == &#x27;auto&#x27;:
+            print(&#x27;🔎 Wykrywanie języka audio (próbkuję kilka momentów, pomijam czołówkę)...&#x27;)
+            whisper_lang, conf = detect_language_robust(model, video_file)
+            print(f&#x27;   Wykryty język: {lang_name(whisper_lang)} ({whisper_lang}), pewność ~{conf:.0%}\n&#x27;)
+        else:
+            whisper_lang = source_lang
+
+        # Transkrypcja
+        print(&#x27;⏳ Transkrypcja audio... (może potrwać kilka minut)&#x27;)
+        print(&#x27;   Postęp pojawi się poniżej:\n&#x27;)
+
+        # Parametry transkrypcji (fp16 tylko na GPU)
+        transcribe_kwargs = dict(
+            language=whisper_lang,
+            task=&#x27;transcribe&#x27;,  # zawsze transkrypcja w oryginale; tłumaczymy osobno (Whisper translate umie tylko EN)
+            verbose=True,  # Pokaż postęp
+            fp16=(device == &#x27;cuda&#x27;),  # half precision na GPU = szybciej; na CPU wymuszone FP32
+            initial_prompt=initial_prompt,  # kontekst/nazwy własne — poprawia dokładność
+            # --- Parametry ograniczające halucynacje i zapętlenia ---
+            condition_on_previous_text=False,  # KLUCZOWE: zapobiega pętlom powtórzeń (&quot;I&#x27;m sorry&quot; w kółko)
+            beam_size=5,                       # lepsze dekodowanie niż domyślne zachłanne
+            temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),  # automatyczny fallback przy słabym sygnale
+            compression_ratio_threshold=2.4,  # odrzuca segmenty wyglądające na halucynację
+            logprob_threshold=-1.0,            # odrzuca segmenty o niskiej pewności
+            no_speech_threshold=0.6,           # lepiej wykrywa muzykę/ciszę (nie wymyśla tekstu)
+        )
+
+        try:
+            result = model.transcribe(video_file, **transcribe_kwargs)
+        except RuntimeError as e:
+            if device == &#x27;cuda&#x27; and &#x27;out of memory&#x27; in str(e).lower():
+                # Zabrakło VRAM w trakcie — zwolnij pamięć i dokończ na CPU
+                print(f&#x27;\n⚠️  Zabrakło pamięci GPU ({e}).&#x27;)
+                print(&#x27;   Przełączam transkrypcję na CPU (wolniej). &#x27;
+                      &#x27;Następnym razem użyj mniejszego modelu, np. --model turbo.&#x27;)
+                import torch
+                del model
+                torch.cuda.empty_cache()
+                device = &#x27;cpu&#x27;
+                model = whisper.load_model(model_size, device=device)
+                transcribe_kwargs[&#x27;fp16&#x27;] = False
+                result = model.transcribe(video_file, **transcribe_kwargs)
+            else:
+                raise
+
+        segments = result[&#x27;segments&#x27;]
+
+        # Język oryginału (ustalony wcześniej: podany lub wykryty) — także źródło dla tłumaczenia
+        detected_lang = whisper_lang
+
+        base_name = os.path.splitext(video_file)[0]
+        created_files = []
+
+        # 1) Zapisz napisy w języku ORYGINAŁU
+        orig_code = detected_lang.upper()
+        srt_orig = f&#x27;{base_name}_{orig_code}.srt&#x27;
+        txt_orig = f&#x27;{base_name}_{orig_code}.txt&#x27;
+
+        print(f&#x27;\n💾 Zapisywanie napisów (oryginał): {srt_orig}&#x27;)
+        write_srt(srt_orig, segments)
+        with open(txt_orig, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+            f.write(result[&#x27;text&#x27;])
+        created_files.append(srt_orig)
+        created_files.append(txt_orig)
+
+        # 2) Jeśli trzeba — przetłumacz i zapisz wersję docelową
+        if translate_to and translate_to != detected_lang:
+            print(f&#x27;\n🔁 Tłumaczenie {len(segments)} segmentów na {lang_name(translate_to)}...&#x27;)
+            # Znamy język oryginału — przekazujemy go wprost (pewniejsze niż &#x27;auto&#x27;)
+            source_for_translate = detected_lang
+            original_texts = [s[&#x27;text&#x27;] for s in segments]
+            translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
+
+            tgt_code = translate_to.upper()
+            srt_tgt = f&#x27;{base_name}_{tgt_code}.srt&#x27;
+            txt_tgt = f&#x27;{base_name}_{tgt_code}.txt&#x27;
+
+            print(f&#x27;\n💾 Zapisywanie napisów (tłumaczenie): {srt_tgt}&#x27;)
+            write_srt(srt_tgt, segments, texts=translated_texts)
+            with open(txt_tgt, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
+                f.write(&#x27;\n&#x27;.join(t.strip() for t in translated_texts))
+            created_files.append(srt_tgt)
+            created_files.append(txt_tgt)
+
+        print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
+        print(&#x27;✓✓✓ NAPISY WYGENEROWANE POMYŚLNIE ✓✓✓&#x27;)
+        print(&#x27;=&#x27; * 70)
+        print(f&#x27;\n📄 Utworzone pliki:&#x27;)
+        for path in created_files:
+            print(f&#x27;   • {path}&#x27;)
+        print(&#x27;\n💡 Pliki .srt możesz użyć w odtwarzaczach wideo (VLC, MPC-HC, itp.)&#x27;)
+        print(&#x27;=&#x27; * 70)
+
+        return True
+
+    except Exception as e:
+        print(f&#x27;\n✗ Błąd podczas generowania napisów: {e}&#x27;)
+        print(&#x27;\nSprawdź czy:&#x27;)
+        print(&#x27;- Plik wideo nie jest uszkodzony&#x27;)
+        print(&#x27;- Masz wystarczająco RAM (min. 2GB wolnego)&#x27;)
+        print(&#x27;- ffmpeg jest poprawnie zainstalowany&#x27;)
+        return False
+
+
+def format_timestamp_srt(seconds):
+    &quot;&quot;&quot;Konwertuje sekundy na format SRT (00:00:00,000)&quot;&quot;&quot;
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f&#x27;{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}&#x27;
+
+
+# Flagi dodawane do KAŻDEGO wywołania yt-dlp — czynią pobieranie odpornym
+# na typowe problemy (sieć, blokady regionalne, przerwane transfery, playlisty).
+COMMON_YTDLP_FLAGS = [
+    &#x27;--no-playlist&#x27;,            # nie pobieraj całej playlisty, gdy URL ma &amp;list=
+    &#x27;--retries&#x27;, &#x27;10&#x27;,          # ponów próby przy błędach sieci
+    &#x27;--fragment-retries&#x27;, &#x27;10&#x27;, # ponów pobieranie pojedynczych fragmentów
+    &#x27;--socket-timeout&#x27;, &#x27;30&#x27;,   # nie zawieszaj się w nieskończoność
+    &#x27;--continue&#x27;,               # wznawiaj przerwane pobierania (pliki .part)
+    &#x27;--geo-bypass&#x27;,             # próba automatycznego obejścia blokady regionalnej
+    &#x27;--newline&#x27;,                # postęp w osobnych liniach (czytelny log)
+    &#x27;--ignore-errors&#x27;,          # nie wywalaj się na pojedynczym drobnym błędzie
+]
+
+# Rozszerzenia plików medialnych — do wykrywania, co faktycznie pobrano
+MEDIA_EXTENSIONS = {
+    &#x27;mp4&#x27;: (&#x27;.mp4&#x27;, &#x27;.mkv&#x27;, &#x27;.webm&#x27;, &#x27;.mov&#x27;, &#x27;.flv&#x27;),
+    &#x27;mp3&#x27;: (&#x27;.mp3&#x27;, &#x27;.m4a&#x27;, &#x27;.opus&#x27;, &#x27;.aac&#x27;, &#x27;.wav&#x27;, &#x27;.ogg&#x27;),
+}
+
+
+def ensure_ytdlp():
+    &quot;&quot;&quot;Sprawdza czy yt-dlp jest dostępny; jeśli nie — próbuje zainstalować.&quot;&quot;&quot;
+    try:
+        check = subprocess.run(
+            [sys.executable, &#x27;-m&#x27;, &#x27;yt_dlp&#x27;, &#x27;--version&#x27;],
+            capture_output=True, text=True
+        )
+        if check.returncode == 0:
+            print(f&#x27;✓ yt-dlp dostępny (wersja: {check.stdout.strip()})&#x27;)
+            return True
+    except Exception:
+        pass
+
+    print(&#x27;⚠️  yt-dlp nie jest zainstalowany — próbuję zainstalować automatycznie...&#x27;)
+    return update_ytdlp()
+
+
+def update_ytdlp():
+    &quot;&quot;&quot;Instaluje lub aktualizuje yt-dlp do najnowszej wersji przez pip.&quot;&quot;&quot;
+    print(&#x27;⏳ Instalacja/aktualizacja yt-dlp (pip install -U yt-dlp)...&#x27;)
+    try:
+        res = subprocess.run([sys.executable, &#x27;-m&#x27;, &#x27;pip&#x27;, &#x27;install&#x27;, &#x27;-U&#x27;, &#x27;yt-dlp&#x27;])
+        if res.returncode == 0:
+            check = subprocess.run(
+                [sys.executable, &#x27;-m&#x27;, &#x27;yt_dlp&#x27;, &#x27;--version&#x27;],
+                capture_output=True, text=True
+            )
+            if check.returncode == 0:
+                print(f&#x27;✓ yt-dlp gotowy (wersja: {check.stdout.strip()})&#x27;)
+                return True
+    except Exception as e:
+        print(f&#x27;✗ Błąd instalacji yt-dlp: {e}&#x27;)
+        return False
+
+    print(&#x27;✗ Nie udało się zainstalować/zaktualizować yt-dlp.&#x27;)
+    print(&#x27;  Spróbuj ręcznie: pip install -U yt-dlp&#x27;)
+    return False
+
+
+def run_ytdlp(command):
+    &quot;&quot;&quot;
+    Uruchamia yt-dlp, streamując output na żywo (widać pasek postępu),
+    a jednocześnie zbiera go do analizy błędów.
+
+    Zwraca: (returncode, pełny_output_jako_tekst)
+    &quot;&quot;&quot;
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding=&#x27;utf-8&#x27;,
+            errors=&#x27;replace&#x27;,
+            bufsize=1,
+        )
+    except FileNotFoundError as e:
+        return 1, f&#x27;Nie można uruchomić yt-dlp: {e}&#x27;
+
+    collected = []
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        collected.append(line)
+    process.wait()
+    return process.returncode, &#x27;&#x27;.join(collected)
+
+
+def detect_downloaded_file(before_files, output_dir, format_choice):
+    &quot;&quot;&quot;
+    Wykrywa pobrany plik porównując zawartość katalogu sprzed i po pobraniu.
+    Najpewniejsza metoda — niezależna od formatu komunikatów yt-dlp.
+    &quot;&quot;&quot;
+    exts = MEDIA_EXTENSIONS.get(format_choice, ())
+    try:
+        after_files = set(os.listdir(output_dir))
+    except OSError:
+        return None
+
+    # Najpierw nowe pliki; jeśli plik już istniał (re-download) — bierzemy najnowszy
+    new_files = [f for f in (after_files - before_files) if f.lower().endswith(exts)]
+    pool = new_files if new_files else [f for f in after_files if f.lower().endswith(exts)]
+    if not pool:
+        return None
+
+    pool.sort(key=lambda f: os.path.getmtime(os.path.join(output_dir, f)), reverse=True)
+    return pool[0]
+
+
+def diagnose_failure(output):
+    &quot;&quot;&quot;
+    Analizuje output yt-dlp i zwraca słownik:
+    - &#x27;message&#x27;: czytelne wyjaśnienie problemu
+    - &#x27;suggest_update&#x27;: czy aktualizacja yt-dlp może pomóc (warto ponowić)
+    &quot;&quot;&quot;
+    low = (output or &#x27;&#x27;).lower()
+
+    # Problemy, które zwykle naprawia aktualizacja yt-dlp (zmiany po stronie YouTube)
+    update_signals = [
+        &#x27;unable to extract&#x27;, &#x27;nsig extraction&#x27;, &#x27;signature extraction&#x27;,
+        &#x27;failed to extract any player response&#x27;, &#x27;precondition check failed&#x27;,
+        &#x27;http error 403&#x27;, &#x27;unable to download webpage&#x27;, &#x27;players/&#x27;, &#x27;jsinterp&#x27;,
+    ]
+    if any(s in low for s in update_signals):
+        return {
+            &#x27;message&#x27;: &#x27;YouTube prawdopodobnie zmienił coś po swojej stronie &#x27;
+                       &#x27;(błąd ekstrakcji). Zwykle pomaga aktualizacja yt-dlp.&#x27;,
+            &#x27;suggest_update&#x27;: True,
+        }
+
+    if &#x27;sign in to confirm your age&#x27; in low or &#x27;age-restricted&#x27; in low or &#x27;inappropriate&#x27; in low:
+        return {
+            &#x27;message&#x27;: &#x27;Wideo z ograniczeniem wiekowym — wymaga zalogowania. &#x27;
+                       &#x27;Wyeksportuj ciasteczka z przeglądarki i użyj &#x27;
+                       &#x27;yt-dlp --cookies-from-browser.&#x27;,
+            &#x27;suggest_update&#x27;: False,
+        }
+
+    if &quot;confirm you&#x27;re not a bot&quot; in low or &#x27;sign in to confirm&#x27; in low:
+        return {
+            &#x27;message&#x27;: &#x27;YouTube żąda potwierdzenia, że nie jesteś botem. &#x27;
+                       &#x27;Pomaga logowanie przez ciasteczka (--cookies-from-browser) &#x27;
+                       &#x27;lub odczekanie i zmiana sieci/VPN.&#x27;,
+            &#x27;suggest_update&#x27;: False,
+        }
+
+    if &#x27;private video&#x27; in low:
+        return {&#x27;message&#x27;: &#x27;To wideo jest prywatne — nie da się go pobrać.&#x27;, &#x27;suggest_update&#x27;: False}
+
+    if &#x27;this video has been removed&#x27; in low or &#x27;video unavailable&#x27; in low or &#x27;account associated&#x27; in low:
+        return {&#x27;message&#x27;: &#x27;Wideo jest niedostępne lub zostało usunięte.&#x27;, &#x27;suggest_update&#x27;: False}
+
+    if &#x27;not available in your country&#x27; in low or &#x27;blocked it in your country&#x27; in low or &#x27;geo&#x27; in low:
+        return {
+            &#x27;message&#x27;: &#x27;Wideo zablokowane regionalnie. Mimo --geo-bypass nie udało &#x27;
+                       &#x27;się obejść — spróbuj VPN.&#x27;,
+            &#x27;suggest_update&#x27;: False,
+        }
+
+    if &#x27;drm&#x27; in low:
+        return {&#x27;message&#x27;: &#x27;Wideo chronione DRM — nie można go pobrać.&#x27;, &#x27;suggest_update&#x27;: False}
+
+    if &#x27;http error 429&#x27; in low or &#x27;too many requests&#x27; in low:
+        return {
+            &#x27;message&#x27;: &#x27;YouTube ogranicza liczbę żądań (HTTP 429). Odczekaj kilka &#x27;
+                       &#x27;minut lub zmień sieć/VPN.&#x27;,
+            &#x27;suggest_update&#x27;: False,
+        }
+
+    if any(s in low for s in [&#x27;getaddrinfo&#x27;, &#x27;timed out&#x27;, &#x27;connection&#x27;, &#x27;network&#x27;, &#x27;temporary failure&#x27;]):
+        return {&#x27;message&#x27;: &#x27;Problem z połączeniem internetowym.&#x27;, &#x27;suggest_update&#x27;: False}
+
+    return {
+        &#x27;message&#x27;: &#x27;Nieznany błąd pobierania. Warto spróbować aktualizacji yt-dlp.&#x27;,
+        &#x27;suggest_update&#x27;: True,
+    }
+
+
+def try_download(url, format_spec, format_name, output_template, extra_args, output_dir, format_choice):
+    &quot;&quot;&quot;
+    Próbuje pobrać wideo z danym formatem.
+    Zwraca: (success, nazwa_pliku_lub_None, output)
+    &quot;&quot;&quot;
+    command = [
+        sys.executable, &#x27;-m&#x27;, &#x27;yt_dlp&#x27;,
+        &#x27;-f&#x27;, format_spec,
+        &#x27;-o&#x27;, output_template,
+    ]
+    command.extend(COMMON_YTDLP_FLAGS)
+    if extra_args:
+        command.extend(extra_args)
+    command.append(url)
+
+    print(f&#x27;\n[Próba: {format_name}]&#x27;)
+    print(f&#x27;Format: {format_spec}&#x27;)
+
+    before_files = set(os.listdir(output_dir)) if os.path.isdir(output_dir) else set()
+    returncode, output = run_ytdlp(command)
+
+    if returncode == 0:
+        filename = detect_downloaded_file(before_files, output_dir, format_choice)
+        print(f&#x27;✓ Sukces! Pobrano używając: {format_name}&#x27;)
+        return True, filename, output
+
+    print(f&#x27;✗ Nieudane: {format_name}&#x27;)
+    return False, None, output
+
+
+def attempt_all_strategies(url, strategies, output_template, output_dir, format_choice):
+    &quot;&quot;&quot;
+    Przechodzi przez wszystkie strategie po kolei aż któraś zadziała.
+    Zwraca: (success, nazwa_pliku, połączony_output_wszystkich_prób)
+    &quot;&quot;&quot;
+    combined_output = []
+    for i, (format_spec, format_name, extra_args) in enumerate(strategies, 1):
+        print(f&#x27;\nStrategia {i}/{len(strategies)}&#x27;)
+        success, filename, output = try_download(
+            url, format_spec, format_name, output_template, extra_args, output_dir, format_choice
+        )
+        combined_output.append(output)
+
+        if success:
+            return True, filename, &#x27;\n&#x27;.join(combined_output)
+
+        if i &lt; len(strategies):
+            print(&#x27;Próbuję następną strategię...&#x27;)
+
+    return False, None, &#x27;\n&#x27;.join(combined_output)
+
+
+def download_youtube(raw_url, format_choice=&#x27;mp4&#x27;, generate_subs=False, whisper_model=&#x27;base&#x27;,
+                     source_lang=&#x27;pl&#x27;, translate_to=None, initial_prompt=None):
+    url = extract_url(raw_url)
+    if not url:
+        print(&#x27;Nie wykryto poprawnego linku YouTube.&#x27;)
+        return
+
+    output_dir = os.getcwd()
+    output_template = &#x27;%(title)s.%(ext)s&#x27;
+
+    print(f&#x27;\nPobieranie z: {url}&#x27;)
+    print(f&#x27;Katalog docelowy: {output_dir}&#x27;)
+    print(f&#x27;Format: {format_choice}&#x27;)
+    if generate_subs:
+        print(f&#x27;Generowanie napisów: TAK (model: {whisper_model})&#x27;)
+        print(f&#x27;  Język audio: {lang_name(source_lang)}&#x27;)
+        if translate_to and translate_to != source_lang:
+            print(f&#x27;  Tłumaczenie na: {lang_name(translate_to)}&#x27;)
+    print(&#x27;\n&#x27; + &#x27;=&#x27; * 60)
+
+    # Upewnij się, że yt-dlp jest dostępny (w razie potrzeby zainstaluj)
+    if not ensure_ytdlp():
+        print(&#x27;\n✗ Bez yt-dlp nie da się pobierać. Przerywam.&#x27;)
+        return
+
+    downloaded_file = None
+
+    if format_choice == &#x27;mp4&#x27;:
+        strategies = [
+            (&#x27;bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]&#x27;, 
+             &#x27;Najlepsza jakość MP4 z osobnym audio&#x27;, 
+             [&#x27;--merge-output-format&#x27;, &#x27;mp4&#x27;]),
+
+            (&#x27;bestvideo+bestaudio/best&#x27;, 
+             &#x27;Najlepsza jakość (dowolne kodeki) z łączeniem&#x27;, 
+             [&#x27;--merge-output-format&#x27;, &#x27;mp4&#x27;]),
+
+            (&#x27;22&#x27;, 
+             &#x27;Format 22 (720p MP4)&#x27;, 
+             None),
+
+            (&#x27;18&#x27;, 
+             &#x27;Format 18 (360p MP4)&#x27;, 
+             None),
+
+            (&#x27;best[ext=mp4]&#x27;, 
+             &#x27;Najlepszy dostępny MP4&#x27;, 
+             None),
+
+            (&#x27;best&#x27;, 
+             &#x27;Najlepszy dostępny format (fallback)&#x27;, 
+             [&#x27;--merge-output-format&#x27;, &#x27;mp4&#x27;, &#x27;--recode-video&#x27;, &#x27;mp4&#x27;]),
+        ]
+
+    elif format_choice == &#x27;mp3&#x27;:
+        strategies = [
+            (&#x27;bestaudio[ext=m4a]/bestaudio&#x27;, 
+             &#x27;Najlepsza jakość audio z konwersją na MP3&#x27;, 
+             [&#x27;-x&#x27;, &#x27;--audio-format&#x27;, &#x27;mp3&#x27;, &#x27;--audio-quality&#x27;, &#x27;0&#x27;]),
+
+            (&#x27;bestaudio&#x27;, 
+             &#x27;Najlepsza jakość audio (alternatywna konwersja)&#x27;, 
+             [&#x27;-x&#x27;, &#x27;--audio-format&#x27;, &#x27;mp3&#x27;]),
+
+            (&#x27;140&#x27;, 
+             &#x27;Format 140 (M4A) z konwersją na MP3&#x27;, 
+             [&#x27;-x&#x27;, &#x27;--audio-format&#x27;, &#x27;mp3&#x27;]),
+
+            (&#x27;best&#x27;, 
+             &#x27;Najlepszy format z ekstrakcją audio&#x27;, 
+             [&#x27;-x&#x27;, &#x27;--audio-format&#x27;, &#x27;mp3&#x27;]),
+        ]
+    else:
+        print(&#x27;Nieobsługiwany format.&#x27;)
+        return
+
+    # Próbuj wszystkich strategii po kolei
+    success, downloaded_file, output = attempt_all_strategies(
+        url, strategies, output_template, output_dir, format_choice
+    )
+
+    # Jeśli wszystko zawiodło — zdiagnozuj i ewentualnie zaktualizuj yt-dlp i spróbuj raz jeszcze
+    if not success:
+        diag = diagnose_failure(output)
+        print(&#x27;\n&#x27; + &#x27;=&#x27; * 60)
+        print(&#x27;⚠️  Wszystkie strategie zawiodły.&#x27;)
+        print(f&#x27;Diagnoza: {diag[&quot;message&quot;]}&#x27;)
+        print(&#x27;=&#x27; * 60)
+
+        if diag[&#x27;suggest_update&#x27;]:
+            print(&#x27;\n🔄 Próbuję zaktualizować yt-dlp i ponowić pobieranie...&#x27;)
+            if update_ytdlp():
+                success, downloaded_file, output = attempt_all_strategies(
+                    url, strategies, output_template, output_dir, format_choice
+                )
+
+    if success:
+        print(&#x27;\n&#x27; + &#x27;=&#x27; * 60)
+        print(&#x27;✓✓✓ POBRANO POMYŚLNIE ✓✓✓&#x27;)
+        print(f&#x27;Lokalizacja: {output_dir}&#x27;)
+        if downloaded_file:
+            print(f&#x27;Plik: {downloaded_file}&#x27;)
+        print(&#x27;=&#x27; * 60)
+    else:
+        diag = diagnose_failure(output)
+        print(&#x27;\n&#x27; + &#x27;=&#x27; * 60)
+        print(&#x27;✗✗✗ BŁĄD: Nie udało się pobrać wideo ✗✗✗&#x27;)
+        print(f&#x27;\nPrawdopodobna przyczyna: {diag[&quot;message&quot;]}&#x27;)
+        print(&#x27;\nCo możesz zrobić:&#x27;)
+        print(&#x27;- Sprawdź, czy wideo otwiera się w przeglądarce&#x27;)
+        print(&#x27;- Dla wideo z logowaniem/ograniczeniem wieku: --cookies-from-browser&#x27;)
+        print(&#x27;- Przy blokadzie regionalnej: włącz VPN&#x27;)
+        print(&#x27;- Przy HTTP 429: odczekaj kilka minut&#x27;)
+        print(&#x27;- Zaktualizuj ręcznie: pip install -U yt-dlp&#x27;)
+        print(&#x27;=&#x27; * 60)
+        return
+
+    # Jeśli pobrano pomyślnie i włączono generowanie napisów
+    if success and generate_subs and format_choice == &#x27;mp4&#x27;:
+        # Jeśli nie znamy dokładnej nazwy pliku, spróbuj znaleźć
+        if not downloaded_file:
+            # Znajdź najnowszy plik MP4 w katalogu
+            mp4_files = [f for f in os.listdir(output_dir) if f.endswith(&#x27;.mp4&#x27;)]
+            if mp4_files:
+                mp4_files.sort(key=lambda x: os.path.getmtime(os.path.join(output_dir, x)), reverse=True)
+                downloaded_file = mp4_files[0]
+
+        if downloaded_file:
+            full_path = os.path.join(output_dir, downloaded_file) if not os.path.isabs(downloaded_file) else downloaded_file
+            generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to, initial_prompt)
+        else:
+            print(&#x27;\n⚠️  Nie można znaleźć pobranego pliku do generowania napisów.&#x27;)
+    elif generate_subs and format_choice == &#x27;mp3&#x27;:
+        print(&#x27;\n⚠️  Generowanie napisów jest dostępne tylko dla formatu MP4.&#x27;)
+
+
+if __name__ == &#x27;__main__&#x27;:
+    parser = argparse.ArgumentParser(
+        description=&#x27;Pobieranie z YouTube w mp4 lub mp3 z automatycznym obchodzeniem błędów&#x27;,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=&quot;&quot;&quot;
+Przykłady użycia:
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot;
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --format mp3
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs --model medium
+
+  # Film po hiszpańsku -&gt; polskie napisy (tłumaczenie):
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs --source-lang es --translate-to pl
+
+  # Auto-wykrycie języka oryginału -&gt; polskie napisy:
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs --source-lang auto --translate-to pl
+
+  # Plik lokalny na dysku -&gt; przetłumaczone polskie napisy (bez pobierania):
+  %(prog)s --file &quot;C:\\filmy\\wideo.mp4&quot; --source-lang es --translate-to pl
+        &quot;&quot;&quot;
+    )
+    parser.add_argument(&#x27;url&#x27;, nargs=&#x27;?&#x27;, help=&#x27;Link do filmu na YouTube&#x27;)
+    parser.add_argument(
+        &#x27;--file&#x27;,
+        help=&#x27;Ścieżka do pliku wideo/audio JUŻ na dysku. Pomija pobieranie &#x27;
+             &#x27;i od razu generuje (i opcjonalnie tłumaczy) napisy.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--format&#x27;, 
+        choices=[&#x27;mp4&#x27;, &#x27;mp3&#x27;], 
+        default=&#x27;mp4&#x27;, 
+        help=&#x27;Format do pobrania (domyślnie: mp4)&#x27;
+    )
+    parser.add_argument(
+        &#x27;--subs&#x27;, 
+        action=&#x27;store_true&#x27;,
+        help=&#x27;Generuj napisy używając Whisper AI (tylko dla MP4). &#x27;
+             &#x27;Domyślnie w języku oryginału; użyj --translate-to aby przetłumaczyć.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--model&#x27;,
+        default=&#x27;base&#x27;,
+        help=&#x27;Model Whisper (domyślnie: base). Dowolna nazwa obsługiwana przez Whisper, &#x27;
+             &#x27;np.: tiny, base, small, medium, large, large-v3, turbo. &#x27;
+             &#x27;Większy = dokładniejszy, ale wolniejszy. Nowsze modele działają &#x27;
+             &#x27;automatycznie, gdy tylko pojawią się w bibliotece whisper.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--source-lang&#x27;,
+        default=&#x27;pl&#x27;,
+        help=&#x27;Język audio w nagraniu, np. es, en, de (domyślnie: pl). &#x27;
+             &#x27;Użyj &quot;auto&quot; do automatycznego wykrycia języka przez Whisper.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--translate-to&#x27;,
+        default=None,
+        help=&#x27;Docelowy język napisów, np. pl. Włącza tłumaczenie (Google Translate). &#x27;
+             &#x27;Bez tego napisy pozostają w języku oryginału.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--prompt&#x27;,
+        default=None,
+        help=&#x27;Podpowiedź kontekstowa dla Whisper (initial_prompt): nazwy własne, &#x27;
+             &#x27;imiona postaci, terminologia, poprawna pisownia. Wyraźnie poprawia &#x27;
+             &#x27;dokładność, np.: --prompt &quot;Pomni, Ragatha, Jax, Caine, Gangle, Zooble&quot;.&#x27;
+    )
+
+    args = parser.parse_args()
+
+    if args.file:
+        # Tryb pliku lokalnego — bez pobierania, od razu napisy/tłumaczenie
+        if not os.path.exists(args.file):
+            print(f&#x27;✗ Nie znaleziono pliku: {args.file}&#x27;)
+            sys.exit(1)
+        generate_subtitles_with_whisper(args.file, args.model,
+                                        args.source_lang, args.translate_to, args.prompt)
+    elif args.url:
+        download_youtube(args.url, args.format, args.subs, args.model,
+                         args.source_lang, args.translate_to, args.prompt)
+    else:
+        parser.error(&#x27;Podaj link do YouTube albo użyj --file ze ścieżką do pliku na dysku.&#x27;)
+</div>
+
+    <div class="tip" style="margin-top: 30px; text-align: center; font-size: 1.2em;">
+        <strong>🎉 Powodzenia! 🎉</strong><br>
+        W razie problemów zajrzyj do sekcji „Rozwiązywanie problemów".
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,37 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+
+# --- Media files (downloaded videos/audio) ---
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.flv
+*.mp3
+*.m4a
+*.opus
+*.aac
+*.wav
+*.ogg
+
+# --- Generated subtitles / transcripts ---
+*.srt
+*.vtt
+*.txt
+!requirements.txt
+*.json
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

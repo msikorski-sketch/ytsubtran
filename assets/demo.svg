@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="430" font-family="'Cascadia Code','Consolas','Courier New',monospace" font-size="15">
+  <!-- window -->
+  <rect x="0" y="0" width="820" height="430" rx="10" fill="#1a202c"/>
+  <!-- title bar -->
+  <rect x="0" y="0" width="820" height="34" rx="10" fill="#2d3748"/>
+  <rect x="0" y="20" width="820" height="14" fill="#2d3748"/>
+  <circle cx="22" cy="17" r="6" fill="#f56565"/>
+  <circle cx="44" cy="17" r="6" fill="#ecc94b"/>
+  <circle cx="66" cy="17" r="6" fill="#48bb78"/>
+  <text x="410" y="22" fill="#a0aec0" text-anchor="middle" font-size="13">youtube_downloader — Windows PowerShell</text>
+
+  <!-- body -->
+  <g>
+    <text x="20" y="68"><tspan fill="#48bb78">PS&gt;</tspan><tspan fill="#e2e8f0"> python youtube_downloader.py --file episode.mp4 \</tspan></text>
+    <text x="20" y="92" fill="#e2e8f0">        --source-lang pt --translate-to pl --model turbo</text>
+
+    <text x="20" y="128"><tspan fill="#48bb78">✓</tspan><tspan fill="#a0aec0"> Whisper   </tspan><tspan fill="#48bb78">✓</tspan><tspan fill="#a0aec0"> ffmpeg   </tspan><tspan fill="#48bb78">✓</tspan><tspan fill="#a0aec0"> deep-translator</tspan></text>
+    <text x="20" y="154"><tspan fill="#63b3ed">🖥  GPU:</tspan><tspan fill="#e2e8f0"> NVIDIA GeForce RTX 4060 Ti (8.0 GB VRAM)</tspan></text>
+    <text x="20" y="180"><tspan fill="#a0aec0">Audio:</tspan><tspan fill="#e2e8f0"> portugalski   </tspan><tspan fill="#d69e2e">→</tspan><tspan fill="#a0aec0">  Napisy:</tspan><tspan fill="#e2e8f0"> polski</tspan></text>
+
+    <text x="20" y="216" fill="#ecc94b">⏳ Transkrypcja (GPU, fp16)…</text>
+    <text x="20" y="242"><tspan fill="#718096">[00:00 → 00:04]</tspan><tspan fill="#e2e8f0">  Hej! To nie twoja wina.</tspan></text>
+    <text x="20" y="268"><tspan fill="#718096">[00:07 → 00:10]</tspan><tspan fill="#e2e8f0">  Dlaczego nie mogę za nim płakać?</tspan></text>
+    <text x="20" y="294"><tspan fill="#718096">[00:12 → 00:18]</tspan><tspan fill="#e2e8f0">  Myślę, że lepiej obmyślimy plan…</tspan></text>
+
+    <text x="20" y="334" fill="#48bb78" font-weight="bold">✓✓✓ NAPISY WYGENEROWANE POMYŚLNIE ✓✓✓</text>
+    <text x="20" y="360"><tspan fill="#a0aec0">   •</tspan><tspan fill="#63b3ed"> episode_PT.srt</tspan><tspan fill="#a0aec0">    •</tspan><tspan fill="#63b3ed"> episode_PL.srt</tspan></text>
+
+    <text x="20" y="396"><tspan fill="#48bb78">PS&gt;</tspan><tspan fill="#e2e8f0"> _</tspan></text>
+  </g>
+</svg>
