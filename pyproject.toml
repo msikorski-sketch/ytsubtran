@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytsubtran"
+version = "1.0.0"
+description = "Download YouTube videos and auto-generate or translate subtitles with OpenAI Whisper."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Michał Sikorski" }]
+keywords = ["whisper", "subtitles", "yt-dlp", "transcription", "translation", "youtube", "srt"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "yt-dlp>=2025.1.1",
+    "openai-whisper>=20240930",
+    "deep-translator>=1.11.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+
+[project.urls]
+Homepage = "https://github.com/msikorski-sketch/ytsubtran"
+Documentation = "https://github.com/msikorski-sketch/ytsubtran/blob/main/docs/HOW_IT_WORKS.md"
+Issues = "https://github.com/msikorski-sketch/ytsubtran/issues"
+
+# Single-module project: the whole tool lives in youtube_downloader.py
+[tool.setuptools]
+py-modules = ["youtube_downloader"]
+
+# Installs a console command:  ytsubtran "URL" ...
+[project.scripts]
+ytsubtran = "youtube_downloader:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # long help/print strings are fine
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

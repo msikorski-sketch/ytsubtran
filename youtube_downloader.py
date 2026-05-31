@@ -164,8 +164,7 @@ def detect_language_robust(model, audio_path, fractions=(0.15, 0.4, 0.65)):
     import whisper
 
     audio = whisper.load_audio(audio_path)
-    sr = whisper.audio.SAMPLE_RATE
-    window = whisper.audio.N_SAMPLES  # 30 s materiału
+    window = whisper.audio.N_SAMPLES  # 30 s materiału (Whisper przetwarza okna 30 s)
     total = len(audio)
     n_mels = model.dims.n_mels
 
@@ -204,7 +203,7 @@ def pick_device():
 
 
 def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='pl',
-                                    translate_to=None, initial_prompt=None):
+                                    translate_to=None, initial_prompt=None, output_dir=None):
     """
     Generuje napisy używając Whisper, opcjonalnie z tłumaczeniem.
 
@@ -218,6 +217,7 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
                     pozostają w języku oryginału (sama transkrypcja).
     - initial_prompt: podpowiedź kontekstowa dla Whisper (nazwy własne,
                       terminologia) — poprawia dokładność i pisownię.
+    - output_dir: katalog na pliki napisów. Jeśli None, zapisuje obok pliku wideo.
     """
     print('\n' + '=' * 70)
     print('🎙️  GENEROWANIE NAPISÓW Z WHISPER')
@@ -370,7 +370,12 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
         # Język oryginału (ustalony wcześniej: podany lub wykryty) — także źródło dla tłumaczenia
         detected_lang = whisper_lang
 
-        base_name = os.path.splitext(video_file)[0]
+        # Gdzie zapisać napisy: w output_dir (jeśli podano) lub obok pliku wideo
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+            base_name = os.path.join(output_dir, os.path.splitext(os.path.basename(video_file))[0])
+        else:
+            base_name = os.path.splitext(video_file)[0]
         created_files = []
 
         # 1) Zapisz napisy w języku ORYGINAŁU
@@ -407,7 +412,7 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
         print('\n' + '=' * 70)
         print('✓✓✓ NAPISY WYGENEROWANE POMYŚLNIE ✓✓✓')
         print('=' * 70)
-        print(f'\n📄 Utworzone pliki:')
+        print('\n📄 Utworzone pliki:')
         for path in created_files:
             print(f'   • {path}')
         print('\n💡 Pliki .srt możesz użyć w odtwarzaczach wideo (VLC, MPC-HC, itp.)')
@@ -611,7 +616,8 @@ def diagnose_failure(output):
     }
 
 
-def try_download(url, format_spec, format_name, output_template, extra_args, output_dir, format_choice):
+def try_download(url, format_spec, format_name, output_template, extra_args, output_dir,
+                 format_choice, cookies_from_browser=None):
     """
     Próbuje pobrać wideo z danym formatem.
     Zwraca: (success, nazwa_pliku_lub_None, output)
@@ -622,6 +628,9 @@ def try_download(url, format_spec, format_name, output_template, extra_args, out
         '-o', output_template,
     ]
     command.extend(COMMON_YTDLP_FLAGS)
+    if cookies_from_browser:
+        # Logowanie przez ciasteczka przeglądarki (filmy 18+ / "nie jesteś botem")
+        command.extend(['--cookies-from-browser', cookies_from_browser])
     if extra_args:
         command.extend(extra_args)
     command.append(url)
@@ -641,7 +650,8 @@ def try_download(url, format_spec, format_name, output_template, extra_args, out
     return False, None, output
 
 
-def attempt_all_strategies(url, strategies, output_template, output_dir, format_choice):
+def attempt_all_strategies(url, strategies, output_template, output_dir, format_choice,
+                           cookies_from_browser=None):
     """
     Przechodzi przez wszystkie strategie po kolei aż któraś zadziała.
     Zwraca: (success, nazwa_pliku, połączony_output_wszystkich_prób)
@@ -650,7 +660,8 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
     for i, (format_spec, format_name, extra_args) in enumerate(strategies, 1):
         print(f'\nStrategia {i}/{len(strategies)}')
         success, filename, output = try_download(
-            url, format_spec, format_name, output_template, extra_args, output_dir, format_choice
+            url, format_spec, format_name, output_template, extra_args, output_dir,
+            format_choice, cookies_from_browser
         )
         combined_output.append(output)
 
@@ -664,14 +675,18 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
 
 
 def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_model='base',
-                     source_lang='pl', translate_to=None, initial_prompt=None):
+                     source_lang='pl', translate_to=None, initial_prompt=None,
+                     cookies_from_browser=None, output_dir=None):
     url = extract_url(raw_url)
     if not url:
         print('Nie wykryto poprawnego linku YouTube.')
         return
 
-    output_dir = os.getcwd()
-    output_template = '%(title)s.%(ext)s'
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    else:
+        output_dir = os.getcwd()
+    output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
 
     print(f'\nPobieranie z: {url}')
     print(f'Katalog docelowy: {output_dir}')
@@ -692,47 +707,47 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
     if format_choice == 'mp4':
         strategies = [
-            ('bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]', 
-             'Najlepsza jakość MP4 z osobnym audio', 
+            ('bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
+             'Najlepsza jakość MP4 z osobnym audio',
              ['--merge-output-format', 'mp4']),
 
-            ('bestvideo+bestaudio/best', 
-             'Najlepsza jakość (dowolne kodeki) z łączeniem', 
+            ('bestvideo+bestaudio/best',
+             'Najlepsza jakość (dowolne kodeki) z łączeniem',
              ['--merge-output-format', 'mp4']),
 
-            ('22', 
-             'Format 22 (720p MP4)', 
+            ('22',
+             'Format 22 (720p MP4)',
              None),
 
-            ('18', 
-             'Format 18 (360p MP4)', 
+            ('18',
+             'Format 18 (360p MP4)',
              None),
 
-            ('best[ext=mp4]', 
-             'Najlepszy dostępny MP4', 
+            ('best[ext=mp4]',
+             'Najlepszy dostępny MP4',
              None),
 
-            ('best', 
-             'Najlepszy dostępny format (fallback)', 
+            ('best',
+             'Najlepszy dostępny format (fallback)',
              ['--merge-output-format', 'mp4', '--recode-video', 'mp4']),
         ]
 
     elif format_choice == 'mp3':
         strategies = [
-            ('bestaudio[ext=m4a]/bestaudio', 
-             'Najlepsza jakość audio z konwersją na MP3', 
+            ('bestaudio[ext=m4a]/bestaudio',
+             'Najlepsza jakość audio z konwersją na MP3',
              ['-x', '--audio-format', 'mp3', '--audio-quality', '0']),
 
-            ('bestaudio', 
-             'Najlepsza jakość audio (alternatywna konwersja)', 
+            ('bestaudio',
+             'Najlepsza jakość audio (alternatywna konwersja)',
              ['-x', '--audio-format', 'mp3']),
 
-            ('140', 
-             'Format 140 (M4A) z konwersją na MP3', 
+            ('140',
+             'Format 140 (M4A) z konwersją na MP3',
              ['-x', '--audio-format', 'mp3']),
 
-            ('best', 
-             'Najlepszy format z ekstrakcją audio', 
+            ('best',
+             'Najlepszy format z ekstrakcją audio',
              ['-x', '--audio-format', 'mp3']),
         ]
     else:
@@ -741,7 +756,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
     # Próbuj wszystkich strategii po kolei
     success, downloaded_file, output = attempt_all_strategies(
-        url, strategies, output_template, output_dir, format_choice
+        url, strategies, output_template, output_dir, format_choice, cookies_from_browser
     )
 
     # Jeśli wszystko zawiodło — zdiagnozuj i ewentualnie zaktualizuj yt-dlp i spróbuj raz jeszcze
@@ -756,7 +771,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
             print('\n🔄 Próbuję zaktualizować yt-dlp i ponowić pobieranie...')
             if update_ytdlp():
                 success, downloaded_file, output = attempt_all_strategies(
-                    url, strategies, output_template, output_dir, format_choice
+                    url, strategies, output_template, output_dir, format_choice, cookies_from_browser
                 )
 
     if success:
@@ -792,14 +807,14 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
         if downloaded_file:
             full_path = os.path.join(output_dir, downloaded_file) if not os.path.isabs(downloaded_file) else downloaded_file
-            generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to, initial_prompt)
+            generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to, initial_prompt, output_dir)
         else:
             print('\n⚠️  Nie można znaleźć pobranego pliku do generowania napisów.')
     elif generate_subs and format_choice == 'mp3':
         print('\n⚠️  Generowanie napisów jest dostępne tylko dla formatu MP4.')
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(
         description='Pobieranie z YouTube w mp4 lub mp3 z automatycznym obchodzeniem błędów',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -818,6 +833,9 @@ Przykłady użycia:
 
   # Plik lokalny na dysku -> przetłumaczone polskie napisy (bez pobierania):
   %(prog)s --file "C:\\filmy\\wideo.mp4" --source-lang es --translate-to pl
+
+  # Film 18+/z logowaniem (ciasteczka z przeglądarki) i własny katalog wyników:
+  %(prog)s "https://youtube.com/watch?v=..." --cookies-from-browser chrome --output-dir "C:\\pobrane"
         """
     )
     parser.add_argument('url', nargs='?', help='Link do filmu na YouTube')
@@ -827,13 +845,13 @@ Przykłady użycia:
              'i od razu generuje (i opcjonalnie tłumaczy) napisy.'
     )
     parser.add_argument(
-        '--format', 
-        choices=['mp4', 'mp3'], 
-        default='mp4', 
+        '--format',
+        choices=['mp4', 'mp3'],
+        default='mp4',
         help='Format do pobrania (domyślnie: mp4)'
     )
     parser.add_argument(
-        '--subs', 
+        '--subs',
         action='store_true',
         help='Generuj napisy używając Whisper AI (tylko dla MP4). '
              'Domyślnie w języku oryginału; użyj --translate-to aby przetłumaczyć.'
@@ -865,6 +883,19 @@ Przykłady użycia:
              'imiona postaci, terminologia, poprawna pisownia. Wyraźnie poprawia '
              'dokładność, np.: --prompt "Pomni, Ragatha, Jax, Caine, Gangle, Zooble".'
     )
+    parser.add_argument(
+        '--cookies-from-browser',
+        default=None,
+        metavar='BROWSER',
+        help='Pobieraj używając ciasteczek z przeglądarki (chrome, firefox, edge, '
+             'brave, opera...). Rozwiązuje filmy 18+ / "potwierdź, że nie jesteś botem".'
+    )
+    parser.add_argument(
+        '--output-dir',
+        default=None,
+        metavar='KATALOG',
+        help='Katalog na pliki wynikowe (wideo i/lub napisy). Domyślnie bieżący katalog.'
+    )
 
     args = parser.parse_args()
 
@@ -873,10 +904,15 @@ Przykłady użycia:
         if not os.path.exists(args.file):
             print(f'✗ Nie znaleziono pliku: {args.file}')
             sys.exit(1)
-        generate_subtitles_with_whisper(args.file, args.model,
-                                        args.source_lang, args.translate_to, args.prompt)
+        generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
+                                        args.translate_to, args.prompt, args.output_dir)
     elif args.url:
         download_youtube(args.url, args.format, args.subs, args.model,
-                         args.source_lang, args.translate_to, args.prompt)
+                         args.source_lang, args.translate_to, args.prompt,
+                         args.cookies_from_browser, args.output_dir)
     else:
         parser.error('Podaj link do YouTube albo użyj --file ze ścieżką do pliku na dysku.')
+
+
+if __name__ == '__main__':
+    main()

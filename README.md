@@ -3,6 +3,7 @@
 > Download any YouTube video (or use a local file), generate subtitles with **OpenAI Whisper**, and **translate them into any language** — fully automated, GPU-accelerated, and resilient to errors.
 
 <p align="center">
+  <a href="https://github.com/msikorski-sketch/ytsubtran/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/msikorski-sketch/ytsubtran/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white">
   <img alt="Whisper" src="https://img.shields.io/badge/AI-OpenAI%20Whisper-412991?logo=openai&logoColor=white">
   <img alt="GPU" src="https://img.shields.io/badge/GPU-CUDA%20accelerated-76B900?logo=nvidia&logoColor=white">
@@ -48,15 +49,18 @@ Myślę, że lepiej obmyślimy plan powstrzymania Jaxa.
 ## 🚀 Quick start
 
 ```bash
-# 1. Install dependencies
-pip install -U yt-dlp openai-whisper deep-translator
+# 1. Install (gets the `ytsubtran` command + all dependencies)
+pip install .
 # (also install ffmpeg and add it to PATH — see the full guide)
 
 # 2. Download a video + Polish subtitles
-python youtube_downloader.py "https://youtube.com/watch?v=VIDEO_ID" --subs
+ytsubtran "https://youtube.com/watch?v=VIDEO_ID" --subs
 ```
 
 That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
+
+> Prefer not to install? You can always run the script directly:
+> `python youtube_downloader.py "URL" --subs`
 
 ---
 
@@ -64,7 +68,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 
 | Capability | How |
 |---|---|
-| Download video (MP4) | `python youtube_downloader.py "URL"` |
+| Download video (MP4) | `ytsubtran "URL"` |
 | Download audio only (MP3) | `... --format mp3` |
 | Generate subtitles | `... --subs` |
 | Translate subtitles → Polish | `... --subs --source-lang es --translate-to pl` |
@@ -72,6 +76,8 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
 | Pick a Whisper model | `--model turbo` (or `large-v3`, `medium`, …) |
 | Improve accuracy with context | `--prompt "Pomni, Ragatha, Jax, Caine"` |
+| Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
+| Choose where files are saved | `--output-dir "C:\downloads"` |
 
 ## 📦 Installation
 
@@ -82,6 +88,10 @@ python -m venv .venv
 # Windows:  .\.venv\Scripts\activate
 # Linux/mac: source .venv/bin/activate
 
+# Install the package (provides the `ytsubtran` command):
+pip install .
+
+# …or, if you just want the dependencies without installing the command:
 pip install -r requirements.txt
 ```
 
