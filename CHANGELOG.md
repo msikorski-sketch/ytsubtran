@@ -24,6 +24,13 @@ First public release. 🎉
 - **GPU acceleration** — automatic CUDA detection with `fp16`, plus graceful
   fallback to CPU if VRAM runs out.
 - Anti-hallucination decoding parameters to prevent repetition loops.
-- Full Polish installation & usage guide (HTML).
+- **`--cookies-from-browser`** — pass browser cookies to yt-dlp for age-restricted
+  or "confirm you're not a bot" videos.
+- **`--output-dir`** — choose where downloaded media and subtitle files are written.
+- **Installable package** (`pyproject.toml`) exposing a `ytsubtran` console command.
+- **Tests** (`pytest`) for the pure helper functions and **CI** (GitHub Actions:
+  `ruff` lint + `pytest` on Python 3.9 and 3.12).
+- Full Polish installation & usage guide (HTML) and an English technical guide
+  (`docs/HOW_IT_WORKS.md`).
 
 [1.0.0]: https://github.com/msikorski-sketch/ytsubtran/releases/tag/v1.0.0

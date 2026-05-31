@@ -582,34 +582,89 @@ one blob, handy for reading or feeding into other tools.
 
 ## 10. The command-line interface
 
-`argparse` defines the user contract:
+All argument parsing lives in a `main()` function (so it can be exposed as a console
+command — see §10.1). `argparse` defines the user contract:
 
 ```python
-parser.add_argument('url', nargs='?')          # optional positional
-parser.add_argument('--file')                  # local file → skip download
-parser.add_argument('--format', choices=['mp4', 'mp3'], default='mp4')
-parser.add_argument('--subs', action='store_true')
-parser.add_argument('--source-lang', default='pl')   # or 'auto'
-parser.add_argument('--translate-to', default=None)
-parser.add_argument('--model', default='base')       # no choices → any model name
-parser.add_argument('--prompt', default=None)
+def main():
+    parser = argparse.ArgumentParser(...)
+    parser.add_argument('url', nargs='?')          # optional positional
+    parser.add_argument('--file')                  # local file → skip download
+    parser.add_argument('--format', choices=['mp4', 'mp3'], default='mp4')
+    parser.add_argument('--subs', action='store_true')
+    parser.add_argument('--source-lang', default='pl')        # or 'auto'
+    parser.add_argument('--translate-to', default=None)
+    parser.add_argument('--model', default='base')            # no choices → any model name
+    parser.add_argument('--prompt', default=None)
+    parser.add_argument('--cookies-from-browser', default=None)  # chrome / firefox / edge …
+    parser.add_argument('--output-dir', default=None)            # where results go
+    args = parser.parse_args()
+    ...
 ```
 
 Dispatch logic chooses the mode:
 
 ```python
-if args.file:
-    generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
-                                    args.translate_to, args.prompt)
-elif args.url:
-    download_youtube(args.url, args.format, args.subs, args.model,
-                     args.source_lang, args.translate_to, args.prompt)
-else:
-    parser.error('Provide a YouTube link or use --file …')
+    if args.file:
+        generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
+                                        args.translate_to, args.prompt, args.output_dir)
+    elif args.url:
+        download_youtube(args.url, args.format, args.subs, args.model,
+                         args.source_lang, args.translate_to, args.prompt,
+                         args.cookies_from_browser, args.output_dir)
+    else:
+        parser.error('Provide a YouTube link or use --file …')
+
+
+if __name__ == '__main__':
+    main()
 ```
 
 Making `url` optional (`nargs='?'`) is what lets `--file` work without a URL. The
 explicit `parser.error()` gives a friendly message when the user supplies neither.
+
+Two operational flags worth highlighting:
+
+- **`--cookies-from-browser BROWSER`** is forwarded straight to yt-dlp. It reads your
+  logged-in browser cookies, which lets you download age-restricted videos and pass
+  the "confirm you're not a bot" check — the most common downloads our diagnosis
+  flags as needing a login.
+- **`--output-dir DIR`** redirects where files land. For downloads we build the
+  yt-dlp output template as `os.path.join(output_dir, '%(title)s.%(ext)s')`; for
+  subtitles we compute the base name inside that directory. The directory is created
+  with `os.makedirs(..., exist_ok=True)` if missing.
+
+### 10.1 Packaging and the `ytsubtran` command
+
+The project ships a `pyproject.toml` so it can be installed with `pip install .`.
+The key part is the **console entry point**:
+
+```toml
+[project.scripts]
+ytsubtran = "youtube_downloader:main"
+
+[tool.setuptools]
+py-modules = ["youtube_downloader"]
+```
+
+This tells pip to generate a small launcher named `ytsubtran` that calls our
+`main()` function — which is exactly why `main()` exists as a function instead of
+living inside the `if __name__ == '__main__'` block. After installation, users run
+`ytsubtran "URL" --subs` instead of `python youtube_downloader.py …`. Because it's a
+single-module project, `py-modules` (not `packages`) points at the one `.py` file.
+
+### 10.2 Tests and continuous integration
+
+The pure, side-effect-free helpers (`extract_url`, `format_timestamp_srt`,
+`diagnose_failure`, `lang_name`) are covered by `pytest` tests in `tests/`. They
+import `youtube_downloader` directly, which is cheap because the heavy libraries
+(whisper, torch, yt-dlp) are imported **lazily inside functions**, not at module
+top level — so the tests need only the standard library.
+
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs `ruff` (lint) and
+`pytest` on every push and pull request, across Python 3.9 and 3.12. Because the
+tests don't need the heavy deps, CI installs only `pytest` and `ruff` and stays fast.
+This is a deliberate benefit of the lazy-import structure.
 
 ---
 
