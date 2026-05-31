@@ -144,6 +144,14 @@ Load the `.srt` in VLC (Subtitles → Add Subtitle File) or keep it next to the 
 | CUDA out of memory | Use `--model turbo`/`medium`; close other GPU apps |
 | Transcription very slow | Install CUDA PyTorch, or use a smaller model |
 
+## 📚 How it works
+
+Want to understand the internals — or rebuild this from scratch? The
+[**technical guide**](docs/HOW_IT_WORKS.md) explains every design decision: the
+download fallback engine, robust language detection, anti-hallucination Whisper
+parameters, GPU handling, the SRT format, translation, and a step-by-step build
+order.
+
 ## 🤝 Contributing
 
 Issues and pull requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
