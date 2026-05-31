@@ -555,6 +555,18 @@ def diagnose_failure(output):
     """
     low = (output or '').lower()
 
+    # Problem z odczytem ciasteczek przeglądarki (częsty na Windows: przeglądarka
+    # blokuje plik z ciasteczkami, gdy jest otwarta). NIE pomaga aktualizacja yt-dlp.
+    if ('could not copy' in low and 'cookie' in low) or 'cookie database' in low \
+            or 'could not find' in low and 'cookies' in low:
+        return {
+            'message': 'Nie udało się odczytać ciasteczek przeglądarki. ZAMKNIJ całkowicie '
+                       'przeglądarkę (Chrome/Edge blokują plik ciasteczek, gdy są otwarte) '
+                       'i spróbuj ponownie — albo użyj innej: --cookies-from-browser firefox. '
+                       'Jeśli wideo działa bez logowania, po prostu pomiń --cookies-from-browser.',
+            'suggest_update': False,
+        }
+
     # Problemy, które zwykle naprawia aktualizacja yt-dlp (zmiany po stronie YouTube)
     update_signals = [
         'unable to extract', 'nsig extraction', 'signature extraction',

@@ -74,6 +74,12 @@ def test_diagnose_unknown_defaults_to_suggest_update():
     assert diag["suggest_update"] is True
 
 
+def test_diagnose_cookie_db_error_does_not_suggest_update():
+    diag = yt.diagnose_failure("ERROR: Could not copy Chrome cookie database. See ...")
+    assert diag["suggest_update"] is False
+    assert "ciastecz" in diag["message"].lower()
+
+
 # ---------------------------------------------------------------------------
 # lang_name
 # ---------------------------------------------------------------------------
