@@ -1543,103 +1543,103 @@ def download_youtube(raw_url, format_choice=&#x27;mp4&#x27;, generate_subs=False
 
 def main():
     parser = argparse.ArgumentParser(
-        description=&#x27;Pobieranie z YouTube w mp4 lub mp3 z automatycznym obchodzeniem błędów&#x27;,
+        description=&#x27;Download from YouTube as mp4 or mp3 with automatic error workarounds.&#x27;,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=&quot;&quot;&quot;
-Przykłady użycia:
+Examples:
   %(prog)s &quot;https://youtube.com/watch?v=...&quot;
   %(prog)s &quot;https://youtube.com/watch?v=...&quot; --format mp3
   %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs
   %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs --model medium
 
-  # Film po hiszpańsku -&gt; polskie napisy (tłumaczenie):
+  # Spanish video -&gt; Polish subtitles (translation):
   %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs --source-lang es --translate-to pl
 
-  # Auto-wykrycie języka oryginału -&gt; polskie napisy:
+  # Auto-detect the original language -&gt; Polish subtitles:
   %(prog)s &quot;https://youtube.com/watch?v=...&quot; --subs --source-lang auto --translate-to pl
 
-  # Plik lokalny na dysku -&gt; przetłumaczone polskie napisy (bez pobierania):
-  %(prog)s --file &quot;C:\\filmy\\wideo.mp4&quot; --source-lang es --translate-to pl
+  # Local file on disk -&gt; translated Polish subtitles (no download):
+  %(prog)s --file &quot;C:\\videos\\clip.mp4&quot; --source-lang es --translate-to pl
 
-  # Film 18+/z logowaniem (ciasteczka z przeglądarki) i własny katalog wyników:
-  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --cookies-from-browser chrome --output-dir &quot;C:\\pobrane&quot;
+  # Age-restricted/login video (browser cookies) and a custom output folder:
+  %(prog)s &quot;https://youtube.com/watch?v=...&quot; --cookies-from-browser chrome --output-dir &quot;C:\\downloads&quot;
         &quot;&quot;&quot;
     )
-    parser.add_argument(&#x27;url&#x27;, nargs=&#x27;?&#x27;, help=&#x27;Link do filmu na YouTube&#x27;)
+    parser.add_argument(&#x27;url&#x27;, nargs=&#x27;?&#x27;, help=&#x27;YouTube video link&#x27;)
     parser.add_argument(
         &#x27;--file&#x27;,
-        help=&#x27;Ścieżka do pliku wideo/audio JUŻ na dysku. Pomija pobieranie &#x27;
-             &#x27;i od razu generuje (i opcjonalnie tłumaczy) napisy.&#x27;
+        help=&#x27;Path to a video/audio file ALREADY on disk. Skips downloading and &#x27;
+             &#x27;generates (and optionally translates) subtitles right away.&#x27;
     )
     parser.add_argument(
         &#x27;--format&#x27;,
         choices=[&#x27;mp4&#x27;, &#x27;mp3&#x27;],
         default=&#x27;mp4&#x27;,
-        help=&#x27;Format do pobrania (domyślnie: mp4)&#x27;
+        help=&#x27;Download format (default: mp4)&#x27;
     )
     parser.add_argument(
         &#x27;--subs&#x27;,
         action=&#x27;store_true&#x27;,
-        help=&#x27;Generuj napisy używając Whisper AI (tylko dla MP4). &#x27;
-             &#x27;Domyślnie w języku oryginału; użyj --translate-to aby przetłumaczyć.&#x27;
+        help=&#x27;Generate subtitles using Whisper AI (MP4 only). In the original &#x27;
+             &#x27;language by default; use --translate-to to translate.&#x27;
     )
     parser.add_argument(
         &#x27;--model&#x27;,
         default=&#x27;base&#x27;,
-        help=&#x27;Model Whisper (domyślnie: base). Dowolna nazwa obsługiwana przez Whisper, &#x27;
-             &#x27;np.: tiny, base, small, medium, large, large-v3, turbo. &#x27;
-             &#x27;Większy = dokładniejszy, ale wolniejszy. Nowsze modele działają &#x27;
-             &#x27;automatycznie, gdy tylko pojawią się w bibliotece whisper.&#x27;
+        help=&#x27;Whisper model (default: base). Any name supported by Whisper, &#x27;
+             &#x27;e.g.: tiny, base, small, medium, large, large-v3, turbo. &#x27;
+             &#x27;Bigger = more accurate but slower. Newer models work automatically &#x27;
+             &#x27;once they appear in the whisper library.&#x27;
     )
     parser.add_argument(
         &#x27;--source-lang&#x27;,
         default=&#x27;pl&#x27;,
-        help=&#x27;Język audio w nagraniu, np. es, en, de (domyślnie: pl). &#x27;
-             &#x27;Użyj &quot;auto&quot; do automatycznego wykrycia języka przez Whisper.&#x27;
+        help=&#x27;Spoken language of the audio, e.g. es, en, de (default: pl). &#x27;
+             &#x27;Use &quot;auto&quot; to let Whisper detect the language automatically.&#x27;
     )
     parser.add_argument(
         &#x27;--translate-to&#x27;,
         default=None,
-        help=&#x27;Docelowy język napisów, np. pl. Włącza tłumaczenie (Google Translate). &#x27;
-             &#x27;Bez tego napisy pozostają w języku oryginału.&#x27;
+        help=&#x27;Target subtitle language, e.g. pl. Enables translation (Google Translate). &#x27;
+             &#x27;Without it, subtitles stay in the original language.&#x27;
     )
     parser.add_argument(
         &#x27;--prompt&#x27;,
         default=None,
-        help=&#x27;Podpowiedź kontekstowa dla Whisper (initial_prompt): nazwy własne, &#x27;
-             &#x27;imiona postaci, terminologia, poprawna pisownia. Wyraźnie poprawia &#x27;
-             &#x27;dokładność, np.: --prompt &quot;Pomni, Ragatha, Jax, Caine, Gangle, Zooble&quot;.&#x27;
+        help=&#x27;Context hint for Whisper (initial_prompt): proper nouns, character &#x27;
+             &#x27;names, terminology, correct spelling. Noticeably improves accuracy, &#x27;
+             &#x27;e.g.: --prompt &quot;Pomni, Ragatha, Jax, Caine, Gangle, Zooble&quot;.&#x27;
     )
     parser.add_argument(
         &#x27;--cookies-from-browser&#x27;,
         default=None,
         metavar=&#x27;BROWSER&#x27;,
-        help=&#x27;Pobieraj używając ciasteczek z przeglądarki (chrome, firefox, edge, &#x27;
-             &#x27;brave, opera...). Rozwiązuje filmy 18+ / &quot;potwierdź, że nie jesteś botem&quot;.&#x27;
+        help=&#x27;Download using cookies from your browser (chrome, firefox, edge, &#x27;
+             &#x27;brave, opera...). Fixes age-restricted / &quot;confirm you are not a bot&quot; videos.&#x27;
     )
     parser.add_argument(
         &#x27;--output-dir&#x27;,
         default=None,
-        metavar=&#x27;KATALOG&#x27;,
-        help=&#x27;Katalog na pliki wynikowe (wideo i/lub napisy). Domyślnie bieżący katalog.&#x27;
+        metavar=&#x27;DIR&#x27;,
+        help=&#x27;Folder for output files (video and/or subtitles). Defaults to the current directory.&#x27;
     )
     parser.add_argument(
         &#x27;--vtt&#x27;,
         action=&#x27;store_true&#x27;,
-        help=&#x27;Dodatkowo zapisz napisy w formacie WebVTT (.vtt), obok .srt &#x27;
-             &#x27;(przydatne dla odtwarzaczy WWW).&#x27;
+        help=&#x27;Also save subtitles in WebVTT format (.vtt), alongside .srt &#x27;
+             &#x27;(useful for web players).&#x27;
     )
     parser.add_argument(
         &#x27;--burn&#x27;,
         action=&#x27;store_true&#x27;,
-        help=&#x27;Wtop napisy NA STAŁE w obraz (hardsub). Tworzy nowy plik MP4 z napisami &#x27;
-             &#x27;wbudowanymi w wideo (ponowne kodowanie — wolniejsze).&#x27;
+        help=&#x27;Burn subtitles permanently INTO the video (hardsub). Creates a new MP4 &#x27;
+             &#x27;with subtitles baked into the picture (re-encodes — slower).&#x27;
     )
     parser.add_argument(
         &#x27;--embed&#x27;,
         action=&#x27;store_true&#x27;,
-        help=&#x27;Osadź napisy jako miękką, przełączalną ścieżkę w MP4 (bez ponownego &#x27;
-             &#x27;kodowania — szybkie). Widz włącza/wyłącza je w odtwarzaczu.&#x27;
+        help=&#x27;Embed subtitles as a soft, toggleable track in the MP4 (no re-encode &#x27;
+             &#x27;— fast). The viewer can turn them on/off in the player.&#x27;
     )
 
     args = parser.parse_args()
@@ -1658,7 +1658,7 @@ Przykłady użycia:
                          args.cookies_from_browser, args.output_dir, args.vtt,
                          args.burn, args.embed)
     else:
-        parser.error(&#x27;Podaj link do YouTube albo użyj --file ze ścieżką do pliku na dysku.&#x27;)
+        parser.error(&#x27;Provide a YouTube link or use --file with a path to a file on disk.&#x27;)
 
 
 if __name__ == &#x27;__main__&#x27;:

@@ -980,103 +980,103 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Pobieranie z YouTube w mp4 lub mp3 z automatycznym obchodzeniem błędów',
+        description='Download from YouTube as mp4 or mp3 with automatic error workarounds.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Przykłady użycia:
+Examples:
   %(prog)s "https://youtube.com/watch?v=..."
   %(prog)s "https://youtube.com/watch?v=..." --format mp3
   %(prog)s "https://youtube.com/watch?v=..." --subs
   %(prog)s "https://youtube.com/watch?v=..." --subs --model medium
 
-  # Film po hiszpańsku -> polskie napisy (tłumaczenie):
+  # Spanish video -> Polish subtitles (translation):
   %(prog)s "https://youtube.com/watch?v=..." --subs --source-lang es --translate-to pl
 
-  # Auto-wykrycie języka oryginału -> polskie napisy:
+  # Auto-detect the original language -> Polish subtitles:
   %(prog)s "https://youtube.com/watch?v=..." --subs --source-lang auto --translate-to pl
 
-  # Plik lokalny na dysku -> przetłumaczone polskie napisy (bez pobierania):
-  %(prog)s --file "C:\\filmy\\wideo.mp4" --source-lang es --translate-to pl
+  # Local file on disk -> translated Polish subtitles (no download):
+  %(prog)s --file "C:\\videos\\clip.mp4" --source-lang es --translate-to pl
 
-  # Film 18+/z logowaniem (ciasteczka z przeglądarki) i własny katalog wyników:
-  %(prog)s "https://youtube.com/watch?v=..." --cookies-from-browser chrome --output-dir "C:\\pobrane"
+  # Age-restricted/login video (browser cookies) and a custom output folder:
+  %(prog)s "https://youtube.com/watch?v=..." --cookies-from-browser chrome --output-dir "C:\\downloads"
         """
     )
-    parser.add_argument('url', nargs='?', help='Link do filmu na YouTube')
+    parser.add_argument('url', nargs='?', help='YouTube video link')
     parser.add_argument(
         '--file',
-        help='Ścieżka do pliku wideo/audio JUŻ na dysku. Pomija pobieranie '
-             'i od razu generuje (i opcjonalnie tłumaczy) napisy.'
+        help='Path to a video/audio file ALREADY on disk. Skips downloading and '
+             'generates (and optionally translates) subtitles right away.'
     )
     parser.add_argument(
         '--format',
         choices=['mp4', 'mp3'],
         default='mp4',
-        help='Format do pobrania (domyślnie: mp4)'
+        help='Download format (default: mp4)'
     )
     parser.add_argument(
         '--subs',
         action='store_true',
-        help='Generuj napisy używając Whisper AI (tylko dla MP4). '
-             'Domyślnie w języku oryginału; użyj --translate-to aby przetłumaczyć.'
+        help='Generate subtitles using Whisper AI (MP4 only). In the original '
+             'language by default; use --translate-to to translate.'
     )
     parser.add_argument(
         '--model',
         default='base',
-        help='Model Whisper (domyślnie: base). Dowolna nazwa obsługiwana przez Whisper, '
-             'np.: tiny, base, small, medium, large, large-v3, turbo. '
-             'Większy = dokładniejszy, ale wolniejszy. Nowsze modele działają '
-             'automatycznie, gdy tylko pojawią się w bibliotece whisper.'
+        help='Whisper model (default: base). Any name supported by Whisper, '
+             'e.g.: tiny, base, small, medium, large, large-v3, turbo. '
+             'Bigger = more accurate but slower. Newer models work automatically '
+             'once they appear in the whisper library.'
     )
     parser.add_argument(
         '--source-lang',
         default='pl',
-        help='Język audio w nagraniu, np. es, en, de (domyślnie: pl). '
-             'Użyj "auto" do automatycznego wykrycia języka przez Whisper.'
+        help='Spoken language of the audio, e.g. es, en, de (default: pl). '
+             'Use "auto" to let Whisper detect the language automatically.'
     )
     parser.add_argument(
         '--translate-to',
         default=None,
-        help='Docelowy język napisów, np. pl. Włącza tłumaczenie (Google Translate). '
-             'Bez tego napisy pozostają w języku oryginału.'
+        help='Target subtitle language, e.g. pl. Enables translation (Google Translate). '
+             'Without it, subtitles stay in the original language.'
     )
     parser.add_argument(
         '--prompt',
         default=None,
-        help='Podpowiedź kontekstowa dla Whisper (initial_prompt): nazwy własne, '
-             'imiona postaci, terminologia, poprawna pisownia. Wyraźnie poprawia '
-             'dokładność, np.: --prompt "Pomni, Ragatha, Jax, Caine, Gangle, Zooble".'
+        help='Context hint for Whisper (initial_prompt): proper nouns, character '
+             'names, terminology, correct spelling. Noticeably improves accuracy, '
+             'e.g.: --prompt "Pomni, Ragatha, Jax, Caine, Gangle, Zooble".'
     )
     parser.add_argument(
         '--cookies-from-browser',
         default=None,
         metavar='BROWSER',
-        help='Pobieraj używając ciasteczek z przeglądarki (chrome, firefox, edge, '
-             'brave, opera...). Rozwiązuje filmy 18+ / "potwierdź, że nie jesteś botem".'
+        help='Download using cookies from your browser (chrome, firefox, edge, '
+             'brave, opera...). Fixes age-restricted / "confirm you are not a bot" videos.'
     )
     parser.add_argument(
         '--output-dir',
         default=None,
-        metavar='KATALOG',
-        help='Katalog na pliki wynikowe (wideo i/lub napisy). Domyślnie bieżący katalog.'
+        metavar='DIR',
+        help='Folder for output files (video and/or subtitles). Defaults to the current directory.'
     )
     parser.add_argument(
         '--vtt',
         action='store_true',
-        help='Dodatkowo zapisz napisy w formacie WebVTT (.vtt), obok .srt '
-             '(przydatne dla odtwarzaczy WWW).'
+        help='Also save subtitles in WebVTT format (.vtt), alongside .srt '
+             '(useful for web players).'
     )
     parser.add_argument(
         '--burn',
         action='store_true',
-        help='Wtop napisy NA STAŁE w obraz (hardsub). Tworzy nowy plik MP4 z napisami '
-             'wbudowanymi w wideo (ponowne kodowanie — wolniejsze).'
+        help='Burn subtitles permanently INTO the video (hardsub). Creates a new MP4 '
+             'with subtitles baked into the picture (re-encodes — slower).'
     )
     parser.add_argument(
         '--embed',
         action='store_true',
-        help='Osadź napisy jako miękką, przełączalną ścieżkę w MP4 (bez ponownego '
-             'kodowania — szybkie). Widz włącza/wyłącza je w odtwarzaczu.'
+        help='Embed subtitles as a soft, toggleable track in the MP4 (no re-encode '
+             '— fast). The viewer can turn them on/off in the player.'
     )
 
     args = parser.parse_args()
@@ -1095,7 +1095,7 @@ Przykłady użycia:
                          args.cookies_from_browser, args.output_dir, args.vtt,
                          args.burn, args.embed)
     else:
-        parser.error('Podaj link do YouTube albo użyj --file ze ścieżką do pliku na dysku.')
+        parser.error('Provide a YouTube link or use --file with a path to a file on disk.')
 
 
 if __name__ == '__main__':
