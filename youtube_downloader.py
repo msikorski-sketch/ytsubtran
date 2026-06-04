@@ -976,6 +976,26 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         print('\n⚠️  Subtitle generation is only available for the MP4 format.')
 
 
+def prompt_output_dir():
+    """
+    Asks the user where to save the output files. Pressing Enter keeps the
+    current folder. In a non-interactive context (no terminal) it silently
+    returns the current folder so the script never hangs.
+    """
+    default = os.getcwd()
+    if not sys.stdin or not sys.stdin.isatty():
+        return default
+    try:
+        answer = input(f'\n📂 Where to save the output files?\n'
+                       f'   [Enter = current folder: {default}]\n> ')
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+    # Trim whitespace and any quotes the user might have pasted around the path
+    answer = answer.strip().strip('"').strip("'").strip()
+    return answer or default
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Download from YouTube as mp4 or mp3 with automatic error workarounds.',
@@ -1056,7 +1076,8 @@ Examples:
         '--output-dir',
         default=None,
         metavar='DIR',
-        help='Folder for output files (video and/or subtitles). Defaults to the current directory.'
+        help='Folder for output files (video and/or subtitles). If omitted, the script '
+             'asks interactively (Enter = current directory).'
     )
     parser.add_argument(
         '--vtt',
@@ -1079,21 +1100,26 @@ Examples:
 
     args = parser.parse_args()
 
+    if not args.file and not args.url:
+        parser.error('Provide a YouTube link or use --file with a path to a file on disk.')
+
+    # Ask where to save results, unless already set via --output-dir (Enter = current folder)
+    if not args.output_dir:
+        args.output_dir = prompt_output_dir()
+
     if args.file:
-        # Tryb pliku lokalnego — bez pobierania, od razu napisy/tłumaczenie
+        # Local-file mode — no download, generate (and optionally translate) subtitles
         if not os.path.exists(args.file):
             print(f'✗ File not found: {args.file}')
             sys.exit(1)
         generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
                                         args.translate_to, args.prompt, args.output_dir,
                                         args.vtt, args.burn, args.embed)
-    elif args.url:
+    else:  # args.url
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
                          args.cookies_from_browser, args.output_dir, args.vtt,
                          args.burn, args.embed)
-    else:
-        parser.error('Provide a YouTube link or use --file with a path to a file on disk.')
 
 
 if __name__ == '__main__':

@@ -93,3 +93,14 @@ def test_diagnose_cookie_db_error_does_not_suggest_update():
 def test_lang_name_known_and_unknown():
     assert yt.lang_name("pl") == "Polish"
     assert yt.lang_name("xx") == "xx"  # unknown code returns the code itself
+
+
+# ---------------------------------------------------------------------------
+# prompt_output_dir
+# ---------------------------------------------------------------------------
+
+def test_prompt_output_dir_defaults_to_cwd_when_non_interactive():
+    import os
+    # Under pytest stdin is not a TTY, so it must return the current folder
+    # without blocking on input().
+    assert yt.prompt_output_dir() == os.getcwd()

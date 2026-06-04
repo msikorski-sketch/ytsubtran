@@ -27,6 +27,8 @@ First public release. 🎉
 - **`--cookies-from-browser`** — pass browser cookies to yt-dlp for age-restricted
   or "confirm you're not a bot" videos.
 - **`--output-dir`** — choose where downloaded media and subtitle files are written.
+  When omitted, the script now **asks interactively** where to save (Enter = current
+  folder); in non-interactive contexts it silently uses the current folder.
 - **Installable package** (`pyproject.toml`) exposing a `ytsubtran` console command.
 - **Tests** (`pytest`) for the pure helper functions and **CI** (GitHub Actions:
   `ruff` lint + `pytest` on Python 3.9 and 3.12).

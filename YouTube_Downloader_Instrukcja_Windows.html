@@ -386,7 +386,7 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
         <tr><td><code>--model</code></td><td>Model Whisper (dowolna nazwa obsługiwana przez whisper)</td><td>tiny, base, small, medium, large, large-v3, turbo</td></tr>
         <tr><td><code>--prompt</code></td><td>Podpowiedź kontekstowa: nazwy własne, terminologia, pisownia</td><td>"Pomni, Ragatha, Jax, Caine"</td></tr>
         <tr><td><code>--cookies-from-browser</code></td><td>Logowanie przez ciasteczka przeglądarki (filmy 18+ / „nie jesteś botem")</td><td>chrome, firefox, edge, brave, opera</td></tr>
-        <tr><td><code>--output-dir</code></td><td>Katalog na pliki wynikowe (wideo i/lub napisy)</td><td>"C:\pobrane" (domyślnie bieżący)</td></tr>
+        <tr><td><code>--output-dir</code></td><td>Katalog na pliki wynikowe. Pominięty — skrypt zapyta interaktywnie (Enter = bieżący folder)</td><td>"C:\pobrane"</td></tr>
         <tr><td><code>--vtt</code></td><td>Dodatkowo zapisz napisy w formacie WebVTT (.vtt), obok .srt</td><td>flaga (bez wartości)</td></tr>
         <tr><td><code>--burn</code></td><td>Wtop napisy NA STAŁE w obraz (hardsub) — nowy plik MP4, ponowne kodowanie</td><td>flaga (bez wartości)</td></tr>
         <tr><td><code>--embed</code></td><td>Osadź miękką, przełączalną ścieżkę napisów w MP4 (bez kodowania)</td><td>flaga (bez wartości)</td></tr>
@@ -1539,6 +1539,26 @@ def download_youtube(raw_url, format_choice=&#x27;mp4&#x27;, generate_subs=False
         print(&#x27;\n⚠️  Subtitle generation is only available for the MP4 format.&#x27;)
 
 
+def prompt_output_dir():
+    &quot;&quot;&quot;
+    Asks the user where to save the output files. Pressing Enter keeps the
+    current folder. In a non-interactive context (no terminal) it silently
+    returns the current folder so the script never hangs.
+    &quot;&quot;&quot;
+    default = os.getcwd()
+    if not sys.stdin or not sys.stdin.isatty():
+        return default
+    try:
+        answer = input(f&#x27;\n📂 Where to save the output files?\n&#x27;
+                       f&#x27;   [Enter = current folder: {default}]\n&gt; &#x27;)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+    # Trim whitespace and any quotes the user might have pasted around the path
+    answer = answer.strip().strip(&#x27;&quot;&#x27;).strip(&quot;&#x27;&quot;).strip()
+    return answer or default
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=&#x27;Download from YouTube as mp4 or mp3 with automatic error workarounds.&#x27;,
@@ -1619,7 +1639,8 @@ Examples:
         &#x27;--output-dir&#x27;,
         default=None,
         metavar=&#x27;DIR&#x27;,
-        help=&#x27;Folder for output files (video and/or subtitles). Defaults to the current directory.&#x27;
+        help=&#x27;Folder for output files (video and/or subtitles). If omitted, the script &#x27;
+             &#x27;asks interactively (Enter = current directory).&#x27;
     )
     parser.add_argument(
         &#x27;--vtt&#x27;,
@@ -1642,21 +1663,26 @@ Examples:
 
     args = parser.parse_args()
 
+    if not args.file and not args.url:
+        parser.error(&#x27;Provide a YouTube link or use --file with a path to a file on disk.&#x27;)
+
+    # Ask where to save results, unless already set via --output-dir (Enter = current folder)
+    if not args.output_dir:
+        args.output_dir = prompt_output_dir()
+
     if args.file:
-        # Tryb pliku lokalnego — bez pobierania, od razu napisy/tłumaczenie
+        # Local-file mode — no download, generate (and optionally translate) subtitles
         if not os.path.exists(args.file):
             print(f&#x27;✗ File not found: {args.file}&#x27;)
             sys.exit(1)
         generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
                                         args.translate_to, args.prompt, args.output_dir,
                                         args.vtt, args.burn, args.embed)
-    elif args.url:
+    else:  # args.url
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
                          args.cookies_from_browser, args.output_dir, args.vtt,
                          args.burn, args.embed)
-    else:
-        parser.error(&#x27;Provide a YouTube link or use --file with a path to a file on disk.&#x27;)
 
 
 if __name__ == &#x27;__main__&#x27;:

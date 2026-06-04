@@ -650,18 +650,19 @@ def main():
     ...
 ```
 
-Dispatch logic chooses the mode:
+Dispatch logic validates input, asks where to save, then chooses the mode:
 
 ```python
-    if args.file:
-        generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
-                                        args.translate_to, args.prompt, args.output_dir)
-    elif args.url:
-        download_youtube(args.url, args.format, args.subs, args.model,
-                         args.source_lang, args.translate_to, args.prompt,
-                         args.cookies_from_browser, args.output_dir)
-    else:
+    if not args.file and not args.url:
         parser.error('Provide a YouTube link or use --file …')
+
+    if not args.output_dir:                       # not given on the CLI → ask
+        args.output_dir = prompt_output_dir()     # Enter = current folder
+
+    if args.file:
+        generate_subtitles_with_whisper(args.file, ..., args.output_dir, ...)
+    else:  # args.url
+        download_youtube(args.url, ..., args.output_dir, ...)
 
 
 if __name__ == '__main__':
@@ -670,6 +671,12 @@ if __name__ == '__main__':
 
 Making `url` optional (`nargs='?'`) is what lets `--file` work without a URL. The
 explicit `parser.error()` gives a friendly message when the user supplies neither.
+
+`prompt_output_dir()` asks interactively where to save and treats an empty answer as
+the current folder. Crucially it **guards against non-interactive use**: if
+`sys.stdin` isn't a TTY (piped input, CI, cron) it returns the current folder
+immediately instead of blocking forever on `input()`. It also strips quotes a user
+might paste around a Windows path. Passing `--output-dir` explicitly skips the prompt.
 
 Two operational flags worth highlighting:
 
