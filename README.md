@@ -79,6 +79,8 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
 | Choose where files are saved | `--output-dir "C:\downloads"` |
 | Also export WebVTT subtitles | `--vtt` |
+| Burn subtitles into the video | `--burn` |
+| Embed a toggleable subtitle track | `--embed` |
 
 ## 📦 Installation
 

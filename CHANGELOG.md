@@ -33,6 +33,8 @@ First public release. 🎉
 - **Parallel translation** — subtitle segments are translated concurrently (thread
   pool), greatly speeding up long videos while keeping exact 1:1 timing.
 - **`--vtt`** — additionally export subtitles in WebVTT format (for web players).
+- **`--burn`** — hardcode subtitles into the video picture (via ffmpeg `subtitles` filter).
+- **`--embed`** — mux subtitles as a soft, toggleable track into the MP4 (no re-encode).
 - Early **ffmpeg check** before downloading, with a clear warning if it's missing.
 - Full Polish installation & usage guide (HTML) and an English technical guide
   (`docs/HOW_IT_WORKS.md`).

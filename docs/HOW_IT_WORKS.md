@@ -593,7 +593,38 @@ episode_PL.srt   episode_PL.txt     # translated subtitles (only if --translate-
 
 Keeping the original is valuable: if the translation has a glitch you can always
 check against the source. `.srt` is for video players; `.txt` is the full text in
-one blob, handy for reading or feeding into other tools.
+one blob, handy for reading or feeding into other tools. With `--vtt` we also emit
+WebVTT (`.vtt`) — identical content, a `WEBVTT` header, and a `.` before the
+milliseconds instead of `,`.
+
+### 9.1 Putting subtitles into the video (ffmpeg)
+
+Two optional flags hand the subtitles off to ffmpeg. When a translation exists, the
+translated track is used; otherwise the original.
+
+- **`--burn`** *hardcodes* the subtitles into the picture with the `subtitles` video
+  filter — they become pixels, always visible, on any player. This re-encodes the
+  video (slower). The tricky part is Windows paths: the `subtitles` filter treats
+  `:` and `\` specially, so instead of fighting the escaping we **copy the `.srt` to
+  a temp dir under a plain name (`subs.srt`) and run ffmpeg with that dir as the
+  working directory**, referencing just the basename. Bulletproof regardless of how
+  weird the original filename is (spaces, commas, `!`, non-ASCII).
+
+  ```
+  ffmpeg -y -i <video> -vf subtitles=subs.srt -c:a copy <out>.mp4     # cwd = temp dir
+  ```
+
+- **`--embed`** muxes the subtitles as a *soft*, toggleable track (`mov_text` codec
+  for MP4) with `-c copy` — no re-encode, near-instant. The player can switch them
+  on/off.
+
+  ```
+  ffmpeg -y -i <video> -i subs.srt -map 0 -map 1 -c copy -c:s mov_text \
+         -metadata:s:s:0 language=<code> <out>.mp4
+  ```
+
+Both verify the output exists and, on failure, print the last few ffmpeg lines
+rather than a wall of noise.
 
 ---
 
@@ -742,8 +773,8 @@ The current design favors simplicity and zero API keys. If you want to push furt
   punctuation) rather than per-segment, so the translator has context; or swap in
   **DeepL** (often higher quality for some language pairs) or an LLM with the full
   scene as context.
-- **Subtitle styling / burn-in**: use ffmpeg to hard-burn subtitles into the video,
-  or mux them as a soft track into an `.mp4`/`.mkv` container.
+- **Subtitle *styling*** (fonts, colors, position) on top of the existing `--burn`
+  hard-burn — pass `force_style=...` to the `subtitles` filter.
 - **Batch mode**: accept multiple URLs or a folder of files and loop.
 - **`.vtt` output**: emit WebVTT (almost identical to SRT, uses `.` for the
   millisecond separator and a `WEBVTT` header) for web players.

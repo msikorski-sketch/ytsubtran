@@ -388,6 +388,8 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
         <tr><td><code>--cookies-from-browser</code></td><td>Logowanie przez ciasteczka przeglądarki (filmy 18+ / „nie jesteś botem")</td><td>chrome, firefox, edge, brave, opera</td></tr>
         <tr><td><code>--output-dir</code></td><td>Katalog na pliki wynikowe (wideo i/lub napisy)</td><td>"C:\pobrane" (domyślnie bieżący)</td></tr>
         <tr><td><code>--vtt</code></td><td>Dodatkowo zapisz napisy w formacie WebVTT (.vtt), obok .srt</td><td>flaga (bez wartości)</td></tr>
+        <tr><td><code>--burn</code></td><td>Wtop napisy NA STAŁE w obraz (hardsub) — nowy plik MP4, ponowne kodowanie</td><td>flaga (bez wartości)</td></tr>
+        <tr><td><code>--embed</code></td><td>Osadź miękką, przełączalną ścieżkę napisów w MP4 (bez kodowania)</td><td>flaga (bez wartości)</td></tr>
     </table>
     <div class="tip">
         <strong>Plik lokalny vs YouTube:</strong> przy <code>--file</code> napisy generują się od razu
@@ -449,6 +451,16 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
     <div class="examples">
         <strong>Maksymalna dokładność (large-v3 — wymaga ~10 GB VRAM lub cierpliwości na CPU):</strong>
         <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl --model large-v3</div>
+    </div>
+
+    <h3>Napisy w pliku wideo</h3>
+    <div class="examples">
+        <strong>Wtop polskie napisy NA STAŁE w obraz (hardsub — działa wszędzie):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl --burn</div>
+    </div>
+    <div class="examples">
+        <strong>Osadź przełączalną ścieżkę napisów (szybkie, bez kodowania):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl --embed</div>
     </div>
 
     <h2 id="modele">🧠 Modele Whisper — który wybrać</h2>
@@ -783,9 +795,90 @@ def pick_device():
     return &#x27;cpu&#x27;, &#x27;CPU (GPU niedostępne)&#x27;
 
 
+def run_ffmpeg(command, cwd=None):
+    &quot;&quot;&quot;Uruchamia ffmpeg, zbierając output (pokazywany tylko przy błędzie). Zwraca (rc, output).&quot;&quot;&quot;
+    try:
+        proc = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding=&#x27;utf-8&#x27;, errors=&#x27;replace&#x27;, bufsize=1, cwd=cwd
+        )
+    except FileNotFoundError as e:
+        return 1, f&#x27;Nie można uruchomić ffmpeg: {e}&#x27;
+    collected = [line for line in proc.stdout]
+    proc.wait()
+    return proc.returncode, &#x27;&#x27;.join(collected)
+
+
+def burn_subtitles(video_file, srt_file, output_file):
+    &quot;&quot;&quot;
+    Wtapia napisy NA STAŁE w obraz (hardsub) — ponowne kodowanie wideo.
+    Zwraca ścieżkę pliku wynikowego lub None przy błędzie.
+    &quot;&quot;&quot;
+    import shutil as _sh
+    import tempfile
+
+    if not check_ffmpeg_installed():
+        print(&#x27;✗ ffmpeg niedostępny — nie mogę wtopić napisów.&#x27;)
+        return None
+
+    # Kopiujemy SRT do katalogu tymczasowego pod prostą nazwą, by ominąć problemy
+    # z escapowaniem ścieżek (dwukropek dysku, spacje, znaki specjalne) w filtrze ffmpeg.
+    workdir = tempfile.mkdtemp(prefix=&#x27;ytsub_&#x27;)
+    try:
+        _sh.copyfile(srt_file, os.path.join(workdir, &#x27;subs.srt&#x27;))
+        print(&#x27;\n🔥 Wtapianie napisów w obraz (ponowne kodowanie — może chwilę potrwać):&#x27;)
+        print(f&#x27;   {output_file}&#x27;)
+        cmd = [
+            &#x27;ffmpeg&#x27;, &#x27;-y&#x27;, &#x27;-i&#x27;, os.path.abspath(video_file),
+            &#x27;-vf&#x27;, &#x27;subtitles=subs.srt&#x27;,
+            &#x27;-c:a&#x27;, &#x27;copy&#x27;,
+            os.path.abspath(output_file),
+        ]
+        rc, out = run_ffmpeg(cmd, cwd=workdir)
+    finally:
+        _sh.rmtree(workdir, ignore_errors=True)
+
+    if rc == 0 and os.path.exists(output_file):
+        print(&#x27;✓ Napisy wtopione na stałe.&#x27;)
+        return output_file
+    print(&#x27;✗ Wtapianie napisów nie powiodło się:&#x27;)
+    print(&#x27;   &#x27; + &#x27;\n   &#x27;.join(out.strip().splitlines()[-5:]))
+    return None
+
+
+def embed_subtitles(video_file, srt_file, output_file, lang_code=&#x27;und&#x27;):
+    &quot;&quot;&quot;
+    Osadza napisy jako MIĘKKĄ ścieżkę w kontenerze MP4 (bez ponownego kodowania —
+    szybkie; widz włącza/wyłącza napisy w odtwarzaczu). Zwraca ścieżkę lub None.
+    &quot;&quot;&quot;
+    if not check_ffmpeg_installed():
+        print(&#x27;✗ ffmpeg niedostępny — nie mogę osadzić napisów.&#x27;)
+        return None
+
+    print(&#x27;\n🎬 Osadzanie miękkiej ścieżki napisów (bez ponownego kodowania):&#x27;)
+    print(f&#x27;   {output_file}&#x27;)
+    cmd = [
+        &#x27;ffmpeg&#x27;, &#x27;-y&#x27;,
+        &#x27;-i&#x27;, os.path.abspath(video_file),
+        &#x27;-i&#x27;, os.path.abspath(srt_file),
+        &#x27;-map&#x27;, &#x27;0&#x27;, &#x27;-map&#x27;, &#x27;1&#x27;,
+        &#x27;-c&#x27;, &#x27;copy&#x27;, &#x27;-c:s&#x27;, &#x27;mov_text&#x27;,
+        &#x27;-metadata:s:s:0&#x27;, f&#x27;language={lang_code}&#x27;,
+        os.path.abspath(output_file),
+    ]
+    rc, out = run_ffmpeg(cmd)
+
+    if rc == 0 and os.path.exists(output_file):
+        print(&#x27;✓ Napisy osadzone (włączysz je w odtwarzaczu).&#x27;)
+        return output_file
+    print(&#x27;✗ Osadzanie napisów nie powiodło się:&#x27;)
+    print(&#x27;   &#x27; + &#x27;\n   &#x27;.join(out.strip().splitlines()[-5:]))
+    return None
+
+
 def generate_subtitles_with_whisper(video_file, model_size=&#x27;base&#x27;, source_lang=&#x27;pl&#x27;,
                                     translate_to=None, initial_prompt=None, output_dir=None,
-                                    also_vtt=False):
+                                    also_vtt=False, burn=False, embed=False):
     &quot;&quot;&quot;
     Generuje napisy używając Whisper, opcjonalnie z tłumaczeniem.
 
@@ -801,6 +894,9 @@ def generate_subtitles_with_whisper(video_file, model_size=&#x27;base&#x27;, sou
                       terminologia) — poprawia dokładność i pisownię.
     - output_dir: katalog na pliki napisów. Jeśli None, zapisuje obok pliku wideo.
     - also_vtt: dodatkowo zapisz napisy w formacie WebVTT (.vtt), nie tylko .srt.
+    - burn: wtop napisy NA STAŁE w obraz (hardsub, ponowne kodowanie).
+    - embed: osadź napisy jako miękką, przełączalną ścieżkę w MP4 (bez kodowania).
+            Przy tłumaczeniu używana jest wersja przetłumaczona, inaczej oryginał.
     &quot;&quot;&quot;
     print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
     print(&#x27;🎙️  GENEROWANIE NAPISÓW Z WHISPER&#x27;)
@@ -977,6 +1073,10 @@ def generate_subtitles_with_whisper(video_file, model_size=&#x27;base&#x27;, sou
             write_vtt(vtt_orig, segments)
             created_files.append(vtt_orig)
 
+        # „Główny&quot; plik napisów do wtopienia/osadzenia (na razie: oryginał)
+        primary_srt = srt_orig
+        primary_code = orig_code
+
         # 2) Jeśli trzeba — przetłumacz i zapisz wersję docelową
         if translate_to and translate_to != detected_lang:
             print(f&#x27;\n🔁 Tłumaczenie {len(segments)} segmentów na {lang_name(translate_to)}...&#x27;)
@@ -999,6 +1099,20 @@ def generate_subtitles_with_whisper(video_file, model_size=&#x27;base&#x27;, sou
                 vtt_tgt = f&#x27;{base_name}_{tgt_code}.vtt&#x27;
                 write_vtt(vtt_tgt, segments, texts=translated_texts)
                 created_files.append(vtt_tgt)
+
+            # Przy tłumaczeniu wtapiamy/osadzamy wersję przetłumaczoną
+            primary_srt = srt_tgt
+            primary_code = tgt_code
+
+        # 3) Opcjonalnie: wtop (hardsub) lub osadź (miękka ścieżka) napisy w wideo
+        if burn:
+            out = f&#x27;{base_name}_{primary_code}_hardsub.mp4&#x27;
+            if burn_subtitles(video_file, primary_srt, out):
+                created_files.append(out)
+        if embed:
+            out = f&#x27;{base_name}_{primary_code}_soft.mp4&#x27;
+            if embed_subtitles(video_file, primary_srt, out, primary_code.lower()):
+                created_files.append(out)
 
         print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
         print(&#x27;✓✓✓ NAPISY WYGENEROWANE POMYŚLNIE ✓✓✓&#x27;)
@@ -1279,7 +1393,8 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
 
 def download_youtube(raw_url, format_choice=&#x27;mp4&#x27;, generate_subs=False, whisper_model=&#x27;base&#x27;,
                      source_lang=&#x27;pl&#x27;, translate_to=None, initial_prompt=None,
-                     cookies_from_browser=None, output_dir=None, also_vtt=False):
+                     cookies_from_browser=None, output_dir=None, also_vtt=False,
+                     burn=False, embed=False):
     url = extract_url(raw_url)
     if not url:
         print(&#x27;Nie wykryto poprawnego linku YouTube.&#x27;)
@@ -1419,7 +1534,7 @@ def download_youtube(raw_url, format_choice=&#x27;mp4&#x27;, generate_subs=False
         if downloaded_file:
             full_path = os.path.join(output_dir, downloaded_file) if not os.path.isabs(downloaded_file) else downloaded_file
             generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to,
-                                            initial_prompt, output_dir, also_vtt)
+                                            initial_prompt, output_dir, also_vtt, burn, embed)
         else:
             print(&#x27;\n⚠️  Nie można znaleźć pobranego pliku do generowania napisów.&#x27;)
     elif generate_subs and format_choice == &#x27;mp3&#x27;:
@@ -1514,6 +1629,18 @@ Przykłady użycia:
         help=&#x27;Dodatkowo zapisz napisy w formacie WebVTT (.vtt), obok .srt &#x27;
              &#x27;(przydatne dla odtwarzaczy WWW).&#x27;
     )
+    parser.add_argument(
+        &#x27;--burn&#x27;,
+        action=&#x27;store_true&#x27;,
+        help=&#x27;Wtop napisy NA STAŁE w obraz (hardsub). Tworzy nowy plik MP4 z napisami &#x27;
+             &#x27;wbudowanymi w wideo (ponowne kodowanie — wolniejsze).&#x27;
+    )
+    parser.add_argument(
+        &#x27;--embed&#x27;,
+        action=&#x27;store_true&#x27;,
+        help=&#x27;Osadź napisy jako miękką, przełączalną ścieżkę w MP4 (bez ponownego &#x27;
+             &#x27;kodowania — szybkie). Widz włącza/wyłącza je w odtwarzaczu.&#x27;
+    )
 
     args = parser.parse_args()
 
@@ -1524,11 +1651,12 @@ Przykłady użycia:
             sys.exit(1)
         generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
                                         args.translate_to, args.prompt, args.output_dir,
-                                        args.vtt)
+                                        args.vtt, args.burn, args.embed)
     elif args.url:
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
-                         args.cookies_from_browser, args.output_dir, args.vtt)
+                         args.cookies_from_browser, args.output_dir, args.vtt,
+                         args.burn, args.embed)
     else:
         parser.error(&#x27;Podaj link do YouTube albo użyj --file ze ścieżką do pliku na dysku.&#x27;)
 
