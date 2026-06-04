@@ -51,25 +51,25 @@ def check_translator_installed():
 def show_translator_installation_guide():
     """Wyświetla instrukcję instalacji deep-translator"""
     print('\n' + '=' * 70)
-    print('⚠️  BIBLIOTEKA DO TŁUMACZENIA NIE JEST ZAINSTALOWANA')
+    print('⚠️  TRANSLATION LIBRARY IS NOT INSTALLED')
     print('=' * 70)
-    print('\nDo tłumaczenia napisów potrzebna jest biblioteka deep-translator')
-    print('(korzysta z darmowego Google Translate, bez klucza API).\n')
-    print('📦 INSTALACJA:\n')
+    print('\nTranslating subtitles requires the deep-translator library')
+    print('(uses the free Google Translate, no API key).\n')
+    print('📦 INSTALL:\n')
     print('   pip install -U deep-translator\n')
-    print('Po instalacji uruchom skrypt ponownie.')
+    print('After installing, run the script again.')
     print('=' * 70)
 
 
-# Nazwy języków dla czytelnych komunikatów
+# Human-readable language names for messages
 LANGUAGE_NAMES = {
-    'auto': 'auto-wykrywanie',
-    'pl': 'polski', 'en': 'angielski', 'es': 'hiszpański', 'de': 'niemiecki',
-    'fr': 'francuski', 'it': 'włoski', 'pt': 'portugalski', 'ru': 'rosyjski',
-    'uk': 'ukraiński', 'cs': 'czeski', 'sk': 'słowacki', 'nl': 'holenderski',
-    'ja': 'japoński', 'zh': 'chiński', 'ko': 'koreański', 'ar': 'arabski',
-    'tr': 'turecki', 'sv': 'szwedzki', 'no': 'norweski', 'da': 'duński',
-    'fi': 'fiński', 'hu': 'węgierski', 'ro': 'rumuński', 'el': 'grecki',
+    'auto': 'auto-detect',
+    'pl': 'Polish', 'en': 'English', 'es': 'Spanish', 'de': 'German',
+    'fr': 'French', 'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian',
+    'uk': 'Ukrainian', 'cs': 'Czech', 'sk': 'Slovak', 'nl': 'Dutch',
+    'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'ar': 'Arabic',
+    'tr': 'Turkish', 'sv': 'Swedish', 'no': 'Norwegian', 'da': 'Danish',
+    'fi': 'Finnish', 'hu': 'Hungarian', 'ro': 'Romanian', 'el': 'Greek',
 }
 
 
@@ -106,17 +106,17 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
             result = GoogleTranslator(source=src, target=target_lang).translate(original)
             return idx, (result if result else original)
         except Exception:
-            return idx, original  # po cichu zostaw oryginał — nie przerywaj całości
+            return idx, original  # silently keep the original — don't abort everything
 
     translated = [None] * total
     completed = 0
-    # I/O sieciowe zwalnia GIL, więc wątki realnie przyspieszają
+    # Network I/O releases the GIL, so threads give a real speedup
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for idx, text in executor.map(work, enumerate(texts)):
             translated[idx] = text
             completed += 1
             if completed % 25 == 0 or completed == total:
-                print(f'   ...przetłumaczono {completed}/{total} segmentów')
+                print(f'   ...translated {completed}/{total} segments')
 
     return translated
 
@@ -163,25 +163,25 @@ def write_srt(srt_file, segments, texts=None):
 def show_whisper_installation_guide():
     """Wyświetla instrukcję instalacji Whisper"""
     print('\n' + '=' * 70)
-    print('⚠️  WHISPER NIE JEST ZAINSTALOWANY')
+    print('⚠️  WHISPER IS NOT INSTALLED')
     print('=' * 70)
-    print('\nWhisper to darmowy model AI od OpenAI do transkrypcji audio.')
-    print('Działa lokalnie (offline) i doskonale obsługuje język polski!\n')
+    print('\nWhisper is a free OpenAI AI model for audio transcription.')
+    print('It runs locally (offline) and handles many languages very well!\n')
 
-    print('📦 INSTALACJA WHISPER:\n')
-    print('1. Zainstaluj Whisper:')
+    print('📦 INSTALL WHISPER:\n')
+    print('1. Install Whisper:')
     print('   pip install -U openai-whisper\n')
 
-    print('2. Zainstaluj ffmpeg (jeśli jeszcze nie masz):\n')
+    print('2. Install ffmpeg (if you do not have it yet):\n')
     print('   Linux/Ubuntu:')
     print('   sudo apt update && sudo apt install ffmpeg\n')
     print('   Windows:')
-    print('   - Pobierz z: https://ffmpeg.org/download.html')
-    print('   - Rozpakuj i dodaj do PATH\n')
+    print('   - Download from: https://ffmpeg.org/download.html')
+    print('   - Unpack and add to PATH\n')
     print('   macOS:')
     print('   brew install ffmpeg\n')
 
-    print('3. Po instalacji uruchom skrypt ponownie z parametrem --subs\n')
+    print('3. After installing, run the script again with the --subs option\n')
     print('=' * 70)
 
 
@@ -229,7 +229,7 @@ def pick_device():
             return 'cuda', f'GPU: {name} ({total:.1f} GB VRAM)'
     except Exception:
         pass
-    return 'cpu', 'CPU (GPU niedostępne)'
+    return 'cpu', 'CPU (no GPU available)'
 
 
 def run_ffmpeg(command, cwd=None):
@@ -240,8 +240,8 @@ def run_ffmpeg(command, cwd=None):
             text=True, encoding='utf-8', errors='replace', bufsize=1, cwd=cwd
         )
     except FileNotFoundError as e:
-        return 1, f'Nie można uruchomić ffmpeg: {e}'
-    collected = [line for line in proc.stdout]
+        return 1, f'Could not start ffmpeg: {e}'
+    collected = list(proc.stdout)
     proc.wait()
     return proc.returncode, ''.join(collected)
 
@@ -255,15 +255,15 @@ def burn_subtitles(video_file, srt_file, output_file):
     import tempfile
 
     if not check_ffmpeg_installed():
-        print('✗ ffmpeg niedostępny — nie mogę wtopić napisów.')
+        print('✗ ffmpeg not available — cannot burn in subtitles.')
         return None
 
-    # Kopiujemy SRT do katalogu tymczasowego pod prostą nazwą, by ominąć problemy
-    # z escapowaniem ścieżek (dwukropek dysku, spacje, znaki specjalne) w filtrze ffmpeg.
+    # Copy the SRT to a temp dir under a plain name to avoid path-escaping issues
+    # (drive colon, spaces, special chars) in the ffmpeg subtitles filter.
     workdir = tempfile.mkdtemp(prefix='ytsub_')
     try:
         _sh.copyfile(srt_file, os.path.join(workdir, 'subs.srt'))
-        print('\n🔥 Wtapianie napisów w obraz (ponowne kodowanie — może chwilę potrwać):')
+        print('\n🔥 Burning subtitles into the picture (re-encoding — may take a while):')
         print(f'   {output_file}')
         cmd = [
             'ffmpeg', '-y', '-i', os.path.abspath(video_file),
@@ -276,9 +276,9 @@ def burn_subtitles(video_file, srt_file, output_file):
         _sh.rmtree(workdir, ignore_errors=True)
 
     if rc == 0 and os.path.exists(output_file):
-        print('✓ Napisy wtopione na stałe.')
+        print('✓ Subtitles burned in permanently.')
         return output_file
-    print('✗ Wtapianie napisów nie powiodło się:')
+    print('✗ Burning subtitles failed:')
     print('   ' + '\n   '.join(out.strip().splitlines()[-5:]))
     return None
 
@@ -289,10 +289,10 @@ def embed_subtitles(video_file, srt_file, output_file, lang_code='und'):
     szybkie; widz włącza/wyłącza napisy w odtwarzaczu). Zwraca ścieżkę lub None.
     """
     if not check_ffmpeg_installed():
-        print('✗ ffmpeg niedostępny — nie mogę osadzić napisów.')
+        print('✗ ffmpeg not available — cannot embed subtitles.')
         return None
 
-    print('\n🎬 Osadzanie miękkiej ścieżki napisów (bez ponownego kodowania):')
+    print('\n🎬 Embedding a soft subtitle track (no re-encoding):')
     print(f'   {output_file}')
     cmd = [
         'ffmpeg', '-y',
@@ -306,9 +306,9 @@ def embed_subtitles(video_file, srt_file, output_file, lang_code='und'):
     rc, out = run_ffmpeg(cmd)
 
     if rc == 0 and os.path.exists(output_file):
-        print('✓ Napisy osadzone (włączysz je w odtwarzaczu).')
+        print('✓ Subtitles embedded (toggle them on in your player).')
         return output_file
-    print('✗ Osadzanie napisów nie powiodło się:')
+    print('✗ Embedding subtitles failed:')
     print('   ' + '\n   '.join(out.strip().splitlines()[-5:]))
     return None
 
@@ -336,31 +336,31 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
             Przy tłumaczeniu używana jest wersja przetłumaczona, inaczej oryginał.
     """
     print('\n' + '=' * 70)
-    print('🎙️  GENEROWANIE NAPISÓW Z WHISPER')
+    print('🎙️  GENERATING SUBTITLES WITH WHISPER')
     print('=' * 70)
 
-    # Sprawdź czy Whisper jest zainstalowany
+    # Check whether Whisper is installed
     whisper_installed, version = check_whisper_installed()
     if not whisper_installed:
         show_whisper_installation_guide()
         return False
 
-    print(f'✓ Whisper zainstalowany (wersja: {version})')
+    print(f'✓ Whisper installed (version: {version})')
 
-    # Sprawdź czy ffmpeg jest zainstalowany
+    # Check whether ffmpeg is installed
     if not check_ffmpeg_installed():
-        print('✗ ffmpeg nie jest zainstalowany!')
-        print('  Zainstaluj ffmpeg, aby Whisper mógł przetwarzać audio.')
+        print('✗ ffmpeg is not installed!')
+        print('  Install ffmpeg so Whisper can process the audio.')
         return False
 
-    print('✓ ffmpeg zainstalowany')
+    print('✓ ffmpeg installed')
 
-    # Jeśli mamy tłumaczyć — sprawdź bibliotekę tłumaczącą zanim ruszy transkrypcja
+    # If translating — verify the translation library before transcription starts
     if translate_to and translate_to != source_lang:
         if not check_translator_installed():
             show_translator_installation_guide()
             return False
-        print('✓ deep-translator zainstalowany')
+        print('✓ deep-translator installed')
 
     # Import Whisper
     try:
@@ -369,83 +369,83 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
         show_whisper_installation_guide()
         return False
 
-    # Sprawdź czy plik istnieje
+    # Check whether the file exists
     if not os.path.exists(video_file):
-        print(f'✗ Nie znaleziono pliku: {video_file}')
+        print(f'✗ File not found: {video_file}')
         return False
 
-    print(f'\n📁 Plik wideo: {video_file}')
-    print(f'🤖 Model Whisper: {model_size}')
-    print(f'🌍 Język audio (transkrypcja): {lang_name(source_lang)}')
+    print(f'\n📁 Video file: {video_file}')
+    print(f'🤖 Whisper model: {model_size}')
+    print(f'🌍 Audio language (transcription): {lang_name(source_lang)}')
     if translate_to and translate_to != source_lang:
-        print(f'🔁 Tłumaczenie napisów na: {lang_name(translate_to)}')
+        print(f'🔁 Translating subtitles to: {lang_name(translate_to)}')
     print()
 
-    # Informacja o modelach
+    # Model information
     model_info = {
-        'tiny': '~1 GB RAM, najszybszy, słaba jakość (tylko do szybkich testów)',
-        'base': '~1 GB RAM, szybki, przeciętna jakość',
-        'small': '~2 GB RAM, dobra jakość',
-        'medium': '~5 GB RAM, bardzo dobra jakość (zalecany do realnych filmów)',
-        'large': '~10 GB RAM, najlepsza jakość, najwolniejszy',
-        'large-v2': '~10 GB RAM, najlepsza jakość (wariant v2)',
-        'large-v3': '~10 GB RAM, najlepsza jakość (najnowszy duży model)',
-        'turbo': '~6 GB RAM, jakość zbliżona do large-v3, ale dużo szybszy',
+        'tiny': '~1 GB RAM, fastest, low quality (quick tests only)',
+        'base': '~1 GB RAM, fast, average quality',
+        'small': '~2 GB RAM, good quality',
+        'medium': '~5 GB RAM, very good quality (recommended for real videos)',
+        'large': '~10 GB RAM, best quality, slowest',
+        'large-v2': '~10 GB RAM, best quality (v2 variant)',
+        'large-v3': '~10 GB RAM, best quality (latest large model)',
+        'turbo': '~6 GB RAM, quality close to large-v3 but much faster',
     }
-    print(f'ℹ️  {model_info.get(model_size, "model niestandardowy/nowy — używam jak podano")}\n')
+    print(f'ℹ️  {model_info.get(model_size, "custom/new model — using as provided")}\n')
 
     if initial_prompt:
-        print(f'📝 Podpowiedź kontekstowa: "{initial_prompt}"\n')
+        print(f'📝 Context prompt: "{initial_prompt}"\n')
 
-    # Podpowiedź: małe modele słabo radzą sobie z muzyką/wieloma głosami
+    # Hint: small models struggle with music / many speakers
     if model_size in ('tiny', 'base'):
-        print('💡 Wskazówka: dla filmów z muzyką, wieloma rozmówcami lub gwarą model '
-              f'"{model_size}" może dawać błędy i powtórzenia.')
-        print('   Dla lepszej jakości użyj: --model medium / large-v3 / turbo\n')
+        print(f'💡 Hint: for videos with music, many speakers or slang, the "{model_size}" '
+              'model may produce errors and repetitions.')
+        print('   For better quality use: --model medium / large-v3 / turbo\n')
 
-    # Wybór urządzenia: GPU jeśli dostępne (dużo szybciej), inaczej CPU
+    # Device selection: GPU if available (much faster), otherwise CPU
     device, device_desc = pick_device()
-    print(f'🖥️  Urządzenie obliczeniowe: {device_desc}')
+    print(f'🖥️  Compute device: {device_desc}')
     if device == 'cpu':
-        print('   (Masz kartę NVIDIA? Zainstaluj torch z CUDA, aby liczyć na GPU — '
-              'kilkukrotnie szybciej.)')
+        print('   (Got an NVIDIA card? Install torch with CUDA to run on the GPU — '
+              'several times faster.)')
     print()
 
     try:
-        # Załaduj model na wybrane urządzenie
-        print(f'⏳ Ładowanie modelu Whisper ({model_size}) na {device.upper()}...')
-        print('   (Przy pierwszym użyciu model zostanie pobrany - może to chwilę potrwać)')
+        # Load the model on the selected device
+        print(f'⏳ Loading Whisper model ({model_size}) on {device.upper()}...')
+        print('   (On first use the model will be downloaded - this may take a moment)')
         try:
             model = whisper.load_model(model_size, device=device)
         except RuntimeError as e:
             msg = str(e).lower()
             if 'out of memory' in msg or 'cuda' in msg:
-                # Za mało VRAM na ten model — spróbuj awaryjnie na CPU
-                print(f'⚠️  Nie udało się załadować "{model_size}" na GPU ({e}).')
-                print('   Przełączam na CPU. Dla GPU wybierz mniejszy model (np. turbo lub medium).')
+                # Not enough VRAM for this model — fall back to CPU
+                print(f'⚠️  Could not load "{model_size}" on the GPU ({e}).')
+                print('   Falling back to CPU. For GPU pick a smaller model (e.g. turbo or medium).')
                 device = 'cpu'
                 model = whisper.load_model(model_size, device=device)
             else:
-                # Nieznana nazwa modelu — pokaż dostępne i przerwij czytelnie
+                # Unknown model name — show available models and stop clearly
                 available = ', '.join(whisper.available_models())
-                print(f'✗ Nie można załadować modelu "{model_size}": {e}')
-                print(f'  Dostępne modele w tej wersji whisper: {available}')
-                print('  (Aby mieć najnowsze modele, zaktualizuj: pip install -U openai-whisper)')
+                print(f'✗ Could not load model "{model_size}": {e}')
+                print(f'  Models available in this whisper version: {available}')
+                print('  (For the newest models, update: pip install -U openai-whisper)')
                 return False
-        print('✓ Model załadowany\n')
+        print('✓ Model loaded\n')
 
-        # Wykrywanie języka (przy 'auto') — próbkując kilka momentów, by intro
-        # w innym języku nie zafałszowało wyniku
+        # Language detection (when 'auto') — sampling several points so an intro
+        # in another language does not skew the result
         if source_lang == 'auto':
-            print('🔎 Wykrywanie języka audio (próbkuję kilka momentów, pomijam czołówkę)...')
+            print('🔎 Detecting audio language (sampling several points, skipping the intro)...')
             whisper_lang, conf = detect_language_robust(model, video_file)
-            print(f'   Wykryty język: {lang_name(whisper_lang)} ({whisper_lang}), pewność ~{conf:.0%}\n')
+            print(f'   Detected language: {lang_name(whisper_lang)} ({whisper_lang}), confidence ~{conf:.0%}\n')
         else:
             whisper_lang = source_lang
 
-        # Transkrypcja
-        print('⏳ Transkrypcja audio... (może potrwać kilka minut)')
-        print('   Postęp pojawi się poniżej:\n')
+        # Transcription
+        print('⏳ Transcribing audio... (this may take a few minutes)')
+        print('   Progress will appear below:\n')
 
         # Parametry transkrypcji (fp16 tylko na GPU)
         transcribe_kwargs = dict(
@@ -467,10 +467,10 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
             result = model.transcribe(video_file, **transcribe_kwargs)
         except RuntimeError as e:
             if device == 'cuda' and 'out of memory' in str(e).lower():
-                # Zabrakło VRAM w trakcie — zwolnij pamięć i dokończ na CPU
-                print(f'\n⚠️  Zabrakło pamięci GPU ({e}).')
-                print('   Przełączam transkrypcję na CPU (wolniej). '
-                      'Następnym razem użyj mniejszego modelu, np. --model turbo.')
+                # Ran out of VRAM mid-run — free memory and finish on CPU
+                print(f'\n⚠️  Ran out of GPU memory ({e}).')
+                print('   Switching transcription to CPU (slower). '
+                      'Next time use a smaller model, e.g. --model turbo.')
                 import torch
                 del model
                 torch.cuda.empty_cache()
@@ -499,7 +499,7 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
         srt_orig = f'{base_name}_{orig_code}.srt'
         txt_orig = f'{base_name}_{orig_code}.txt'
 
-        print(f'\n💾 Zapisywanie napisów (oryginał): {srt_orig}')
+        print(f'\n💾 Saving subtitles (original): {srt_orig}')
         write_srt(srt_orig, segments)
         with open(txt_orig, 'w', encoding='utf-8') as f:
             f.write(result['text'])
@@ -516,8 +516,8 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
 
         # 2) Jeśli trzeba — przetłumacz i zapisz wersję docelową
         if translate_to and translate_to != detected_lang:
-            print(f'\n🔁 Tłumaczenie {len(segments)} segmentów na {lang_name(translate_to)}...')
-            # Znamy język oryginału — przekazujemy go wprost (pewniejsze niż 'auto')
+            print(f'\n🔁 Translating {len(segments)} segments to {lang_name(translate_to)}...')
+            # We know the source language — pass it explicitly (more reliable than 'auto')
             source_for_translate = detected_lang
             original_texts = [s['text'] for s in segments]
             translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
@@ -526,7 +526,7 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
             srt_tgt = f'{base_name}_{tgt_code}.srt'
             txt_tgt = f'{base_name}_{tgt_code}.txt'
 
-            print(f'\n💾 Zapisywanie napisów (tłumaczenie): {srt_tgt}')
+            print(f'\n💾 Saving subtitles (translation): {srt_tgt}')
             write_srt(srt_tgt, segments, texts=translated_texts)
             with open(txt_tgt, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(t.strip() for t in translated_texts))
@@ -552,22 +552,22 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
                 created_files.append(out)
 
         print('\n' + '=' * 70)
-        print('✓✓✓ NAPISY WYGENEROWANE POMYŚLNIE ✓✓✓')
+        print('✓✓✓ SUBTITLES GENERATED SUCCESSFULLY ✓✓✓')
         print('=' * 70)
-        print('\n📄 Utworzone pliki:')
+        print('\n📄 Created files:')
         for path in created_files:
             print(f'   • {path}')
-        print('\n💡 Pliki .srt możesz użyć w odtwarzaczach wideo (VLC, MPC-HC, itp.)')
+        print('\n💡 You can use the .srt files in video players (VLC, MPC-HC, etc.)')
         print('=' * 70)
 
         return True
 
     except Exception as e:
-        print(f'\n✗ Błąd podczas generowania napisów: {e}')
-        print('\nSprawdź czy:')
-        print('- Plik wideo nie jest uszkodzony')
-        print('- Masz wystarczająco RAM (min. 2GB wolnego)')
-        print('- ffmpeg jest poprawnie zainstalowany')
+        print(f'\n✗ Error while generating subtitles: {e}')
+        print('\nCheck that:')
+        print('- the video file is not corrupted')
+        print('- you have enough RAM (at least 2 GB free)')
+        print('- ffmpeg is installed correctly')
         return False
 
 
@@ -608,18 +608,18 @@ def ensure_ytdlp():
             capture_output=True, text=True
         )
         if check.returncode == 0:
-            print(f'✓ yt-dlp dostępny (wersja: {check.stdout.strip()})')
+            print(f'✓ yt-dlp available (version: {check.stdout.strip()})')
             return True
     except Exception:
         pass
 
-    print('⚠️  yt-dlp nie jest zainstalowany — próbuję zainstalować automatycznie...')
+    print('⚠️  yt-dlp is not installed — trying to install it automatically...')
     return update_ytdlp()
 
 
 def update_ytdlp():
-    """Instaluje lub aktualizuje yt-dlp do najnowszej wersji przez pip."""
-    print('⏳ Instalacja/aktualizacja yt-dlp (pip install -U yt-dlp)...')
+    """Installs or updates yt-dlp to the latest version via pip."""
+    print('⏳ Installing/updating yt-dlp (pip install -U yt-dlp)...')
     try:
         res = subprocess.run([sys.executable, '-m', 'pip', 'install', '-U', 'yt-dlp'])
         if res.returncode == 0:
@@ -628,14 +628,14 @@ def update_ytdlp():
                 capture_output=True, text=True
             )
             if check.returncode == 0:
-                print(f'✓ yt-dlp gotowy (wersja: {check.stdout.strip()})')
+                print(f'✓ yt-dlp ready (version: {check.stdout.strip()})')
                 return True
     except Exception as e:
-        print(f'✗ Błąd instalacji yt-dlp: {e}')
+        print(f'✗ yt-dlp install error: {e}')
         return False
 
-    print('✗ Nie udało się zainstalować/zaktualizować yt-dlp.')
-    print('  Spróbuj ręcznie: pip install -U yt-dlp')
+    print('✗ Could not install/update yt-dlp.')
+    print('  Try manually: pip install -U yt-dlp')
     return False
 
 
@@ -657,7 +657,7 @@ def run_ytdlp(command):
             bufsize=1,
         )
     except FileNotFoundError as e:
-        return 1, f'Nie można uruchomić yt-dlp: {e}'
+        return 1, f'Could not start yt-dlp: {e}'
 
     collected = []
     for line in process.stdout:
@@ -697,19 +697,19 @@ def diagnose_failure(output):
     """
     low = (output or '').lower()
 
-    # Problem z odczytem ciasteczek przeglądarki (częsty na Windows: przeglądarka
-    # blokuje plik z ciasteczkami, gdy jest otwarta). NIE pomaga aktualizacja yt-dlp.
+    # Browser cookie read problem (common on Windows: the browser locks the
+    # cookie file while it is open). Updating yt-dlp does NOT help here.
     if ('could not copy' in low and 'cookie' in low) or 'cookie database' in low \
             or 'could not find' in low and 'cookies' in low:
         return {
-            'message': 'Nie udało się odczytać ciasteczek przeglądarki. ZAMKNIJ całkowicie '
-                       'przeglądarkę (Chrome/Edge blokują plik ciasteczek, gdy są otwarte) '
-                       'i spróbuj ponownie — albo użyj innej: --cookies-from-browser firefox. '
-                       'Jeśli wideo działa bez logowania, po prostu pomiń --cookies-from-browser.',
+            'message': 'Could not read the browser cookies. CLOSE the browser completely '
+                       '(Chrome/Edge lock the cookie file while open) and try again — '
+                       'or use another one: --cookies-from-browser firefox. '
+                       'If the video works without logging in, just drop --cookies-from-browser.',
             'suggest_update': False,
         }
 
-    # Problemy, które zwykle naprawia aktualizacja yt-dlp (zmiany po stronie YouTube)
+    # Problems usually fixed by updating yt-dlp (YouTube-side changes)
     update_signals = [
         'unable to extract', 'nsig extraction', 'signature extraction',
         'failed to extract any player response', 'precondition check failed',
@@ -717,55 +717,53 @@ def diagnose_failure(output):
     ]
     if any(s in low for s in update_signals):
         return {
-            'message': 'YouTube prawdopodobnie zmienił coś po swojej stronie '
-                       '(błąd ekstrakcji). Zwykle pomaga aktualizacja yt-dlp.',
+            'message': 'YouTube likely changed something on their side '
+                       '(extraction error). Updating yt-dlp usually fixes it.',
             'suggest_update': True,
         }
 
     if 'sign in to confirm your age' in low or 'age-restricted' in low or 'inappropriate' in low:
         return {
-            'message': 'Wideo z ograniczeniem wiekowym — wymaga zalogowania. '
-                       'Wyeksportuj ciasteczka z przeglądarki i użyj '
-                       'yt-dlp --cookies-from-browser.',
+            'message': 'Age-restricted video — requires logging in. '
+                       'Use browser cookies: --cookies-from-browser <chrome/firefox/...>.',
             'suggest_update': False,
         }
 
     if "confirm you're not a bot" in low or 'sign in to confirm' in low:
         return {
-            'message': 'YouTube żąda potwierdzenia, że nie jesteś botem. '
-                       'Pomaga logowanie przez ciasteczka (--cookies-from-browser) '
-                       'lub odczekanie i zmiana sieci/VPN.',
+            'message': 'YouTube wants to confirm you are not a bot. '
+                       'Logging in via cookies (--cookies-from-browser) helps, '
+                       'or wait and switch network/VPN.',
             'suggest_update': False,
         }
 
     if 'private video' in low:
-        return {'message': 'To wideo jest prywatne — nie da się go pobrać.', 'suggest_update': False}
+        return {'message': 'This video is private — it cannot be downloaded.', 'suggest_update': False}
 
     if 'this video has been removed' in low or 'video unavailable' in low or 'account associated' in low:
-        return {'message': 'Wideo jest niedostępne lub zostało usunięte.', 'suggest_update': False}
+        return {'message': 'The video is unavailable or has been removed.', 'suggest_update': False}
 
     if 'not available in your country' in low or 'blocked it in your country' in low or 'geo' in low:
         return {
-            'message': 'Wideo zablokowane regionalnie. Mimo --geo-bypass nie udało '
-                       'się obejść — spróbuj VPN.',
+            'message': 'Video is geo-blocked. --geo-bypass did not get around it — try a VPN.',
             'suggest_update': False,
         }
 
     if 'drm' in low:
-        return {'message': 'Wideo chronione DRM — nie można go pobrać.', 'suggest_update': False}
+        return {'message': 'DRM-protected video — it cannot be downloaded.', 'suggest_update': False}
 
     if 'http error 429' in low or 'too many requests' in low:
         return {
-            'message': 'YouTube ogranicza liczbę żądań (HTTP 429). Odczekaj kilka '
-                       'minut lub zmień sieć/VPN.',
+            'message': 'YouTube is rate-limiting requests (HTTP 429). Wait a few '
+                       'minutes or switch network/VPN.',
             'suggest_update': False,
         }
 
     if any(s in low for s in ['getaddrinfo', 'timed out', 'connection', 'network', 'temporary failure']):
-        return {'message': 'Problem z połączeniem internetowym.', 'suggest_update': False}
+        return {'message': 'Internet connection problem.', 'suggest_update': False}
 
     return {
-        'message': 'Nieznany błąd pobierania. Warto spróbować aktualizacji yt-dlp.',
+        'message': 'Unknown download error. Updating yt-dlp is worth a try.',
         'suggest_update': True,
     }
 
@@ -789,7 +787,7 @@ def try_download(url, format_spec, format_name, output_template, extra_args, out
         command.extend(extra_args)
     command.append(url)
 
-    print(f'\n[Próba: {format_name}]')
+    print(f'\n[Attempt: {format_name}]')
     print(f'Format: {format_spec}')
 
     before_files = set(os.listdir(output_dir)) if os.path.isdir(output_dir) else set()
@@ -797,10 +795,10 @@ def try_download(url, format_spec, format_name, output_template, extra_args, out
 
     if returncode == 0:
         filename = detect_downloaded_file(before_files, output_dir, format_choice)
-        print(f'✓ Sukces! Pobrano używając: {format_name}')
+        print(f'✓ Success! Downloaded using: {format_name}')
         return True, filename, output
 
-    print(f'✗ Nieudane: {format_name}')
+    print(f'✗ Failed: {format_name}')
     return False, None, output
 
 
@@ -812,7 +810,7 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
     """
     combined_output = []
     for i, (format_spec, format_name, extra_args) in enumerate(strategies, 1):
-        print(f'\nStrategia {i}/{len(strategies)}')
+        print(f'\nStrategy {i}/{len(strategies)}')
         success, filename, output = try_download(
             url, format_spec, format_name, output_template, extra_args, output_dir,
             format_choice, cookies_from_browser
@@ -823,7 +821,7 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
             return True, filename, '\n'.join(combined_output)
 
         if i < len(strategies):
-            print('Próbuję następną strategię...')
+            print('Trying the next strategy...')
 
     return False, None, '\n'.join(combined_output)
 
@@ -834,7 +832,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      burn=False, embed=False):
     url = extract_url(raw_url)
     if not url:
-        print('Nie wykryto poprawnego linku YouTube.')
+        print('No valid YouTube link detected.')
         return
 
     if output_dir:
@@ -843,27 +841,27 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         output_dir = os.getcwd()
     output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
 
-    print(f'\nPobieranie z: {url}')
-    print(f'Katalog docelowy: {output_dir}')
+    print(f'\nDownloading from: {url}')
+    print(f'Output directory: {output_dir}')
     print(f'Format: {format_choice}')
     if generate_subs:
-        print(f'Generowanie napisów: TAK (model: {whisper_model})')
-        print(f'  Język audio: {lang_name(source_lang)}')
+        print(f'Generating subtitles: YES (model: {whisper_model})')
+        print(f'  Audio language: {lang_name(source_lang)}')
         if translate_to and translate_to != source_lang:
-            print(f'  Tłumaczenie na: {lang_name(translate_to)}')
+            print(f'  Translating to: {lang_name(translate_to)}')
     print('\n' + '=' * 60)
 
-    # Wczesne ostrzeżenie o braku ffmpeg — jest potrzebny do łączenia formatów
-    # (najlepsza jakość) oraz do napisów. Nie przerywamy: formaty 18/22 i MP3
-    # potrafią zadziałać bez niego.
+    # Early warning about missing ffmpeg — it's needed to merge formats (best
+    # quality) and for subtitles. We don't abort: formats 18/22 and MP3 can work
+    # without it.
     if not check_ffmpeg_installed():
-        print('⚠️  ffmpeg nie został wykryty. Łączenie najlepszej jakości wideo+audio '
-              'i generowanie napisów go wymagają.')
-        print('   Zainstaluj ffmpeg i dodaj do PATH (patrz instrukcja). Próbuję mimo to...\n')
+        print('⚠️  ffmpeg not detected. Merging best-quality video+audio and '
+              'generating subtitles require it.')
+        print('   Install ffmpeg and add it to PATH (see the guide). Trying anyway...\n')
 
-    # Upewnij się, że yt-dlp jest dostępny (w razie potrzeby zainstaluj)
+    # Make sure yt-dlp is available (install if needed)
     if not ensure_ytdlp():
-        print('\n✗ Bez yt-dlp nie da się pobierać. Przerywam.')
+        print('\n✗ Cannot download without yt-dlp. Aborting.')
         return
 
     downloaded_file = None
@@ -871,11 +869,11 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
     if format_choice == 'mp4':
         strategies = [
             ('bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
-             'Najlepsza jakość MP4 z osobnym audio',
+             'Best MP4 with separate audio',
              ['--merge-output-format', 'mp4']),
 
             ('bestvideo+bestaudio/best',
-             'Najlepsza jakość (dowolne kodeki) z łączeniem',
+             'Best quality (any codecs) with merging',
              ['--merge-output-format', 'mp4']),
 
             ('22',
@@ -887,51 +885,51 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
              None),
 
             ('best[ext=mp4]',
-             'Najlepszy dostępny MP4',
+             'Best available MP4',
              None),
 
             ('best',
-             'Najlepszy dostępny format (fallback)',
+             'Best available format (fallback)',
              ['--merge-output-format', 'mp4', '--recode-video', 'mp4']),
         ]
 
     elif format_choice == 'mp3':
         strategies = [
             ('bestaudio[ext=m4a]/bestaudio',
-             'Najlepsza jakość audio z konwersją na MP3',
+             'Best audio quality, converted to MP3',
              ['-x', '--audio-format', 'mp3', '--audio-quality', '0']),
 
             ('bestaudio',
-             'Najlepsza jakość audio (alternatywna konwersja)',
+             'Best audio quality (alternative conversion)',
              ['-x', '--audio-format', 'mp3']),
 
             ('140',
-             'Format 140 (M4A) z konwersją na MP3',
+             'Format 140 (M4A) converted to MP3',
              ['-x', '--audio-format', 'mp3']),
 
             ('best',
-             'Najlepszy format z ekstrakcją audio',
+             'Best format with audio extraction',
              ['-x', '--audio-format', 'mp3']),
         ]
     else:
-        print('Nieobsługiwany format.')
+        print('Unsupported format.')
         return
 
-    # Próbuj wszystkich strategii po kolei
+    # Try all strategies in order
     success, downloaded_file, output = attempt_all_strategies(
         url, strategies, output_template, output_dir, format_choice, cookies_from_browser
     )
 
-    # Jeśli wszystko zawiodło — zdiagnozuj i ewentualnie zaktualizuj yt-dlp i spróbuj raz jeszcze
+    # If everything failed — diagnose and possibly update yt-dlp and retry once
     if not success:
         diag = diagnose_failure(output)
         print('\n' + '=' * 60)
-        print('⚠️  Wszystkie strategie zawiodły.')
-        print(f'Diagnoza: {diag["message"]}')
+        print('⚠️  All strategies failed.')
+        print(f'Diagnosis: {diag["message"]}')
         print('=' * 60)
 
         if diag['suggest_update']:
-            print('\n🔄 Próbuję zaktualizować yt-dlp i ponowić pobieranie...')
+            print('\n🔄 Trying to update yt-dlp and retry the download...')
             if update_ytdlp():
                 success, downloaded_file, output = attempt_all_strategies(
                     url, strategies, output_template, output_dir, format_choice, cookies_from_browser
@@ -939,30 +937,30 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
     if success:
         print('\n' + '=' * 60)
-        print('✓✓✓ POBRANO POMYŚLNIE ✓✓✓')
-        print(f'Lokalizacja: {output_dir}')
+        print('✓✓✓ DOWNLOADED SUCCESSFULLY ✓✓✓')
+        print(f'Location: {output_dir}')
         if downloaded_file:
-            print(f'Plik: {downloaded_file}')
+            print(f'File: {downloaded_file}')
         print('=' * 60)
     else:
         diag = diagnose_failure(output)
         print('\n' + '=' * 60)
-        print('✗✗✗ BŁĄD: Nie udało się pobrać wideo ✗✗✗')
-        print(f'\nPrawdopodobna przyczyna: {diag["message"]}')
-        print('\nCo możesz zrobić:')
-        print('- Sprawdź, czy wideo otwiera się w przeglądarce')
-        print('- Dla wideo z logowaniem/ograniczeniem wieku: --cookies-from-browser')
-        print('- Przy blokadzie regionalnej: włącz VPN')
-        print('- Przy HTTP 429: odczekaj kilka minut')
-        print('- Zaktualizuj ręcznie: pip install -U yt-dlp')
+        print('✗✗✗ ERROR: Could not download the video ✗✗✗')
+        print(f'\nLikely cause: {diag["message"]}')
+        print('\nWhat you can do:')
+        print('- Check that the video opens in a browser')
+        print('- For login/age-restricted videos: --cookies-from-browser')
+        print('- For geo-blocking: turn on a VPN')
+        print('- For HTTP 429: wait a few minutes')
+        print('- Update manually: pip install -U yt-dlp')
         print('=' * 60)
         return
 
-    # Jeśli pobrano pomyślnie i włączono generowanie napisów
+    # If downloaded successfully and subtitle generation is enabled
     if success and generate_subs and format_choice == 'mp4':
-        # Jeśli nie znamy dokładnej nazwy pliku, spróbuj znaleźć
+        # If we don't know the exact filename, try to find it
         if not downloaded_file:
-            # Znajdź najnowszy plik MP4 w katalogu
+            # Find the newest MP4 in the directory
             mp4_files = [f for f in os.listdir(output_dir) if f.endswith('.mp4')]
             if mp4_files:
                 mp4_files.sort(key=lambda x: os.path.getmtime(os.path.join(output_dir, x)), reverse=True)
@@ -973,9 +971,9 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
             generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to,
                                             initial_prompt, output_dir, also_vtt, burn, embed)
         else:
-            print('\n⚠️  Nie można znaleźć pobranego pliku do generowania napisów.')
+            print('\n⚠️  Could not find the downloaded file to generate subtitles.')
     elif generate_subs and format_choice == 'mp3':
-        print('\n⚠️  Generowanie napisów jest dostępne tylko dla formatu MP4.')
+        print('\n⚠️  Subtitle generation is only available for the MP4 format.')
 
 
 def main():
@@ -1084,7 +1082,7 @@ Examples:
     if args.file:
         # Tryb pliku lokalnego — bez pobierania, od razu napisy/tłumaczenie
         if not os.path.exists(args.file):
-            print(f'✗ Nie znaleziono pliku: {args.file}')
+            print(f'✗ File not found: {args.file}')
             sys.exit(1)
         generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
                                         args.translate_to, args.prompt, args.output_dir,

@@ -72,7 +72,7 @@ def test_diagnose_private_video_does_not_suggest_update():
 def test_diagnose_rate_limit():
     diag = yt.diagnose_failure("HTTP Error 429: Too Many Requests")
     assert diag["suggest_update"] is False
-    assert "429" in diag["message"] or "żąda" in diag["message"].lower()
+    assert "429" in diag["message"]
 
 
 def test_diagnose_unknown_defaults_to_suggest_update():
@@ -83,7 +83,7 @@ def test_diagnose_unknown_defaults_to_suggest_update():
 def test_diagnose_cookie_db_error_does_not_suggest_update():
     diag = yt.diagnose_failure("ERROR: Could not copy Chrome cookie database. See ...")
     assert diag["suggest_update"] is False
-    assert "ciastecz" in diag["message"].lower()
+    assert "cookie" in diag["message"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -91,5 +91,5 @@ def test_diagnose_cookie_db_error_does_not_suggest_update():
 # ---------------------------------------------------------------------------
 
 def test_lang_name_known_and_unknown():
-    assert yt.lang_name("pl") == "polski"
+    assert yt.lang_name("pl") == "Polish"
     assert yt.lang_name("xx") == "xx"  # unknown code returns the code itself
