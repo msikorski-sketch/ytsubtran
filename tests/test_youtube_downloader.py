@@ -49,6 +49,12 @@ def test_format_timestamp_hours():
     assert yt.format_timestamp_srt(3661.0) == "01:01:01,000"
 
 
+def test_format_timestamp_vtt_uses_dot():
+    # WebVTT uses a dot before milliseconds instead of a comma
+    assert yt.format_timestamp_vtt(65.25) == "00:01:05.250"
+    assert yt.format_timestamp_vtt(0) == "00:00:00.000"
+
+
 # ---------------------------------------------------------------------------
 # diagnose_failure
 # ---------------------------------------------------------------------------

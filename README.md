@@ -78,6 +78,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Improve accuracy with context | `--prompt "Pomni, Ragatha, Jax, Caine"` |
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
 | Choose where files are saved | `--output-dir "C:\downloads"` |
+| Also export WebVTT subtitles | `--vtt` |
 
 ## 📦 Installation
 

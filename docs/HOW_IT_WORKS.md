@@ -536,16 +536,26 @@ Whisper gives us text in the original language. For any target other than Englis
 we translate the segment texts ourselves:
 
 ```python
-def translate_texts(texts, target_lang, source_lang='auto'):
+def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
+    from concurrent.futures import ThreadPoolExecutor
     from deep_translator import GoogleTranslator
-    translator = GoogleTranslator(source=source_lang or 'auto', target=target_lang)
-    translated = []
-    for text in texts:
+    src = source_lang or 'auto'
+
+    def work(item):
+        idx, text = item
         original = text.strip()
+        if not original:
+            return idx, text
         try:
-            translated.append(translator.translate(original) or original)
+            r = GoogleTranslator(source=src, target=target_lang).translate(original)
+            return idx, (r or original)
         except Exception:
-            translated.append(original)   # on failure keep the original, don't crash
+            return idx, original          # on failure keep the original, don't crash
+
+    translated = [None] * len(texts)
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for idx, text in ex.map(work, enumerate(texts)):
+            translated[idx] = text
     return translated
 ```
 
@@ -555,11 +565,18 @@ Design decisions:
   Polish quality, needs internet.
 - We pass the **known source language** (from detection or `--source-lang`) rather
   than `'auto'`, which is more reliable than letting Google guess again.
-- We translate **segment by segment** to keep the 1:1 mapping with timestamps. This
-  is simple and robust; the trade-off is some loss of cross-sentence context (see
-  §13 for how to improve it).
+- We translate **segment by segment** to keep an exact 1:1 mapping with the
+  timestamps, but run the segments **in parallel** over a thread pool. Google
+  Translate is network-bound, so the GIL is released during each request and the
+  wall-clock time drops dramatically on long videos (dozens of segments finish in
+  the time one would otherwise take). Order is preserved by writing results into a
+  pre-sized list by index, so timing stays perfect.
+- A fresh `GoogleTranslator` is created per call — it holds no connection state, so
+  this is safe across threads.
 - If a single segment fails to translate, we keep the original text for that line
   instead of aborting the whole job.
+- Per-segment translation still loses some cross-sentence context; merging segments
+  into full sentences before translating is the next quality step (see §13).
 
 ---
 

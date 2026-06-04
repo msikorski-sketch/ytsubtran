@@ -30,6 +30,10 @@ First public release. 🎉
 - **Installable package** (`pyproject.toml`) exposing a `ytsubtran` console command.
 - **Tests** (`pytest`) for the pure helper functions and **CI** (GitHub Actions:
   `ruff` lint + `pytest` on Python 3.9 and 3.12).
+- **Parallel translation** — subtitle segments are translated concurrently (thread
+  pool), greatly speeding up long videos while keeping exact 1:1 timing.
+- **`--vtt`** — additionally export subtitles in WebVTT format (for web players).
+- Early **ffmpeg check** before downloading, with a clear warning if it's missing.
 - Full Polish installation & usage guide (HTML) and an English technical guide
   (`docs/HOW_IT_WORKS.md`).
 

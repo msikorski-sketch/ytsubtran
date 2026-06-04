@@ -78,37 +78,67 @@ def lang_name(code):
     return LANGUAGE_NAMES.get(code, code)
 
 
-def translate_texts(texts, target_lang, source_lang='auto'):
+def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
     """
     Tłumaczy listę tekstów na język docelowy używając Google Translate.
 
-    Zwraca listę przetłumaczonych tekstów (tej samej długości co wejście).
+    Segmenty tłumaczone są RÓWNOLEGLE (pula wątków) — przy długich filmach
+    to wielokrotne przyspieszenie względem tłumaczenia jeden po drugim, a kolejność
+    i przyporządkowanie do znaczników czasu pozostają dokładne (mapowanie 1:1).
     Jeśli pojedynczy segment się nie przetłumaczy, zostaje oryginalny tekst.
+
+    Zwraca listę przetłumaczonych tekstów (tej samej długości co wejście).
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     from deep_translator import GoogleTranslator
 
-    # Google używa 'auto' do auto-wykrywania języka źródłowego
-    translator = GoogleTranslator(source=source_lang or 'auto', target=target_lang)
-
-    translated = []
+    src = source_lang or 'auto'  # Google używa 'auto' do auto-wykrywania źródła
     total = len(texts)
-    for i, text in enumerate(texts, 1):
+
+    def work(item):
+        idx, text = item
         original = text.strip()
         if not original:
-            translated.append(text)
-            continue
+            return idx, text
         try:
-            result = translator.translate(original)
-            translated.append(result if result else original)
-        except Exception as e:
-            print(f'   ⚠️  Segment {i}/{total} nieprzetłumaczony ({e}) — zostaje oryginał')
-            translated.append(original)
+            # Nowy translator na wywołanie — bezpieczne wątkowo (brak współdzielonego stanu)
+            result = GoogleTranslator(source=src, target=target_lang).translate(original)
+            return idx, (result if result else original)
+        except Exception:
+            return idx, original  # po cichu zostaw oryginał — nie przerywaj całości
 
-        # Postęp co 10 segmentów (lub na końcu)
-        if i % 10 == 0 or i == total:
-            print(f'   ...przetłumaczono {i}/{total} segmentów')
+    translated = [None] * total
+    completed = 0
+    # I/O sieciowe zwalnia GIL, więc wątki realnie przyspieszają
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for idx, text in executor.map(work, enumerate(texts)):
+            translated[idx] = text
+            completed += 1
+            if completed % 25 == 0 or completed == total:
+                print(f'   ...przetłumaczono {completed}/{total} segmentów')
 
     return translated
+
+
+def format_timestamp_vtt(seconds):
+    """Konwertuje sekundy na format WebVTT (00:00:00.000 — kropka zamiast przecinka)."""
+    return format_timestamp_srt(seconds).replace(',', '.')
+
+
+def write_vtt(vtt_file, segments, texts=None):
+    """
+    Zapisuje plik napisów w formacie WebVTT (.vtt) — używany m.in. w odtwarzaczach WWW.
+    Różni się od SRT nagłówkiem 'WEBVTT' i kropką w znaczniku czasu.
+    """
+    with open(vtt_file, 'w', encoding='utf-8') as f:
+        f.write('WEBVTT\n\n')
+        for i, segment in enumerate(segments, 1):
+            start = format_timestamp_vtt(segment['start'])
+            end = format_timestamp_vtt(segment['end'])
+            text = (texts[i - 1] if texts is not None else segment['text']).strip()
+            f.write(f'{start} --> {end}\n')
+            f.write(f'{text}\n\n')
 
 
 def write_srt(srt_file, segments, texts=None):
@@ -203,7 +233,8 @@ def pick_device():
 
 
 def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='pl',
-                                    translate_to=None, initial_prompt=None, output_dir=None):
+                                    translate_to=None, initial_prompt=None, output_dir=None,
+                                    also_vtt=False):
     """
     Generuje napisy używając Whisper, opcjonalnie z tłumaczeniem.
 
@@ -218,6 +249,7 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
     - initial_prompt: podpowiedź kontekstowa dla Whisper (nazwy własne,
                       terminologia) — poprawia dokładność i pisownię.
     - output_dir: katalog na pliki napisów. Jeśli None, zapisuje obok pliku wideo.
+    - also_vtt: dodatkowo zapisz napisy w formacie WebVTT (.vtt), nie tylko .srt.
     """
     print('\n' + '=' * 70)
     print('🎙️  GENEROWANIE NAPISÓW Z WHISPER')
@@ -389,6 +421,10 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
             f.write(result['text'])
         created_files.append(srt_orig)
         created_files.append(txt_orig)
+        if also_vtt:
+            vtt_orig = f'{base_name}_{orig_code}.vtt'
+            write_vtt(vtt_orig, segments)
+            created_files.append(vtt_orig)
 
         # 2) Jeśli trzeba — przetłumacz i zapisz wersję docelową
         if translate_to and translate_to != detected_lang:
@@ -408,6 +444,10 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
                 f.write('\n'.join(t.strip() for t in translated_texts))
             created_files.append(srt_tgt)
             created_files.append(txt_tgt)
+            if also_vtt:
+                vtt_tgt = f'{base_name}_{tgt_code}.vtt'
+                write_vtt(vtt_tgt, segments, texts=translated_texts)
+                created_files.append(vtt_tgt)
 
         print('\n' + '=' * 70)
         print('✓✓✓ NAPISY WYGENEROWANE POMYŚLNIE ✓✓✓')
@@ -688,7 +728,7 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
 
 def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_model='base',
                      source_lang='pl', translate_to=None, initial_prompt=None,
-                     cookies_from_browser=None, output_dir=None):
+                     cookies_from_browser=None, output_dir=None, also_vtt=False):
     url = extract_url(raw_url)
     if not url:
         print('Nie wykryto poprawnego linku YouTube.')
@@ -709,6 +749,14 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         if translate_to and translate_to != source_lang:
             print(f'  Tłumaczenie na: {lang_name(translate_to)}')
     print('\n' + '=' * 60)
+
+    # Wczesne ostrzeżenie o braku ffmpeg — jest potrzebny do łączenia formatów
+    # (najlepsza jakość) oraz do napisów. Nie przerywamy: formaty 18/22 i MP3
+    # potrafią zadziałać bez niego.
+    if not check_ffmpeg_installed():
+        print('⚠️  ffmpeg nie został wykryty. Łączenie najlepszej jakości wideo+audio '
+              'i generowanie napisów go wymagają.')
+        print('   Zainstaluj ffmpeg i dodaj do PATH (patrz instrukcja). Próbuję mimo to...\n')
 
     # Upewnij się, że yt-dlp jest dostępny (w razie potrzeby zainstaluj)
     if not ensure_ytdlp():
@@ -819,7 +867,8 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
         if downloaded_file:
             full_path = os.path.join(output_dir, downloaded_file) if not os.path.isabs(downloaded_file) else downloaded_file
-            generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to, initial_prompt, output_dir)
+            generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to,
+                                            initial_prompt, output_dir, also_vtt)
         else:
             print('\n⚠️  Nie można znaleźć pobranego pliku do generowania napisów.')
     elif generate_subs and format_choice == 'mp3':
@@ -908,6 +957,12 @@ Przykłady użycia:
         metavar='KATALOG',
         help='Katalog na pliki wynikowe (wideo i/lub napisy). Domyślnie bieżący katalog.'
     )
+    parser.add_argument(
+        '--vtt',
+        action='store_true',
+        help='Dodatkowo zapisz napisy w formacie WebVTT (.vtt), obok .srt '
+             '(przydatne dla odtwarzaczy WWW).'
+    )
 
     args = parser.parse_args()
 
@@ -917,11 +972,12 @@ Przykłady użycia:
             print(f'✗ Nie znaleziono pliku: {args.file}')
             sys.exit(1)
         generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
-                                        args.translate_to, args.prompt, args.output_dir)
+                                        args.translate_to, args.prompt, args.output_dir,
+                                        args.vtt)
     elif args.url:
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
-                         args.cookies_from_browser, args.output_dir)
+                         args.cookies_from_browser, args.output_dir, args.vtt)
     else:
         parser.error('Podaj link do YouTube albo użyj --file ze ścieżką do pliku na dysku.')
 
