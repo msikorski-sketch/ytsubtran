@@ -562,6 +562,54 @@ def cut_segments(path, cut_ranges, output_file):
     return None
 
 
+def _safe_filename(text, max_len=60):
+    """Turns a free-text reason into a safe, readable file name (keeps PL letters)."""
+    text = (text or '').strip()
+    text = re.sub(r'[\\/:*?"<>|]+', '', text)   # characters illegal on Windows
+    text = re.sub(r'\s+', ' ', text).strip()
+    text = text[:max_len].rstrip(' .')
+    return text or 'clip'
+
+
+def extract_clips(path, segments, output_dir, reencode=True):
+    """
+    Saves EACH segment as its own standalone clip file (does not touch the original
+    or join anything). File names are numbered and include the start time and the
+    Gemini/heuristic reason, e.g. ``03_02m11s_Animated intro sequence.mp4`` — ready
+    to drop into an editor. Returns the list of created file paths.
+
+    reencode=True  → frame-accurate cut, re-encoded to H.264/AAC (editor-friendly).
+    reencode=False → stream copy (instant, but starts at the nearest keyframe).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    created = []
+    for idx, seg in enumerate(segments, 1):
+        s, e = float(seg[0]), float(seg[1])
+        if e <= s:
+            continue
+        reason = seg[2] if len(seg) > 2 and isinstance(seg[2], str) else ''
+        tag = f'{int(s // 60):02d}m{int(s % 60):02d}s'
+        name = f'{idx:02d}_{tag}_{_safe_filename(reason)}.mp4'
+        out = os.path.join(output_dir, name)
+        if reencode:
+            cmd = ['ffmpeg', '-y', '-hide_banner', '-ss', f'{s:.3f}',
+                   '-i', os.path.abspath(path), '-t', f'{e - s:.3f}',
+                   '-c:v', 'libx264', '-crf', '18', '-preset', 'medium',
+                   '-c:a', 'aac', '-b:a', '192k', os.path.abspath(out)]
+        else:
+            cmd = ['ffmpeg', '-y', '-hide_banner', '-ss', f'{s:.3f}',
+                   '-i', os.path.abspath(path), '-t', f'{e - s:.3f}',
+                   '-c', 'copy', os.path.abspath(out)]
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace')
+        if r.returncode == 0 and os.path.exists(out):
+            created.append(out)
+            print(f'   ✓ {name}')
+        else:
+            print(f'   ✗ failed: {name}')
+    return created
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
@@ -581,3 +629,91 @@ def find_inserts(video_file, url=None, use_ai=False, ai_model='llama3.1',
     if use_ai and candidates:
         candidates = ai_filter_candidates(video_file, candidates, model=ai_model)
     return candidates, 'heuristic'
+
+
+# ---------------------------------------------------------------------------
+# Cut-list persistence (human-editable) + scene-cut snapping
+# ---------------------------------------------------------------------------
+
+def save_cut_list(path, candidates):
+    """
+    Writes the cut list in a human-editable format. Each segment is one line:
+        START_SECONDS<TAB>END_SECONDS<TAB># reason
+    A header explains how to keep a segment (delete its line). Lines starting
+    with '#' and blank lines are ignored on load, so the file round-trips.
+    """
+    lines = [
+        '# Insert cut list — edit freely, then cut with: --cut-inserts --from-list THIS_FILE',
+        '# Each line is one segment to REMOVE.  Delete a line to KEEP that part.',
+        '# Format:  START_SECONDS <TAB> END_SECONDS <TAB> # reason',
+        '#',
+    ]
+    for seg in candidates:
+        s, e = float(seg[0]), float(seg[1])
+        reason = seg[2] if len(seg) > 2 and isinstance(seg[2], str) else ''
+        comment = f'\t# {reason}' if reason else ''
+        lines.append(f'{s:.3f}\t{e:.3f}{comment}')
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+
+
+def load_cut_list(path):
+    """
+    Reads a cut list saved by save_cut_list (or hand-written). Ignores blank lines
+    and '#' comments. Accepts seconds or 'M:SS' for the two time columns and keeps
+    any trailing '# reason'. Returns a sorted list of (start, end, reason).
+    """
+    out = []
+    with open(path, encoding='utf-8') as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            reason = ''
+            if '#' in line:
+                line, reason = line.split('#', 1)
+                reason = reason.strip()
+            parts = line.replace(',', ' ').split()
+            if len(parts) < 2:
+                continue
+            s, e = _parse_time(parts[0]), _parse_time(parts[1])
+            if e > s:
+                out.append((s, e, reason))
+    return sorted(out)
+
+
+def snap_to_scene_cuts(candidates, cuts, tolerance=1.5):
+    """
+    Snaps each segment's start/end to the nearest detected scene cut within
+    `tolerance` seconds, giving frame-accurate boundaries instead of the model's
+    rounded (±1 s) times. If no cut is near, the original value is kept. Snapped
+    segments are merged so any resulting overlaps collapse into clean ranges.
+    """
+    if not cuts:
+        return [(float(s), float(e), (seg[2] if len(seg) > 2 else ''))
+                for seg in candidates for s, e in [(seg[0], seg[1])]]
+    ordered = sorted(cuts)
+
+    def nearest(t):
+        best, best_d = t, tolerance
+        for c in ordered:
+            d = abs(c - t)
+            if d <= best_d:
+                best, best_d = c, d
+            elif c - t > tolerance:
+                break
+        return best
+
+    snapped = []
+    for seg in candidates:
+        s, e = nearest(float(seg[0])), nearest(float(seg[1]))
+        reason = seg[2] if len(seg) > 2 else ''
+        if e > s:
+            snapped.append((s, e, reason))
+    # Preserve reasons when merging adjacent/overlapping snapped ranges
+    merged = merge_ranges([(s, e) for s, e, _ in snapped])
+    result = []
+    for ms, me in merged:
+        reasons = [r for s, e, r in snapped if r and s >= ms - 0.01 and e <= me + 0.01]
+        result.append((ms, me, '; '.join(dict.fromkeys(reasons))))
+    return result

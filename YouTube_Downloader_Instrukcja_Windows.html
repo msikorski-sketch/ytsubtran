@@ -1397,14 +1397,19 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
 def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=False,
                     ai_model=&#x27;llama3.1&#x27;, assume_yes=False,
                     min_len=1.5, max_len=15.0, jump_lu=8.0, require_scene_cut=True,
-                    smart=False, smart_model=&#x27;gemini-2.5-flash&#x27;):
+                    smart=False, smart_model=&#x27;gemini-2.5-flash&#x27;,
+                    from_list=None, snap=False, extract=False, clips_copy=False):
     &quot;&quot;&quot;
-    Detects (and optionally cuts) short inserted clips / interstitials.
+    Detects inserts/interstitials and then EITHER extracts them as separate named
+    clips (extract=True, the default action), OR removes them from the video
+    (do_cut=True), OR just lists them (analysis only).
 
     Default engine: SponsorBlock → audio/scene heuristic → optional AI cross-check.
     With smart=True: use the Gemini multimodal API to locate inserts (best for
     visually-defined cutaways that have no audio signature).
-    Analysis only by default; cuts only when do_cut=True (after confirmation).
+    With from_list=PATH: skip detection entirely and use a saved/edited list
+    (no second Gemini call, fully under your control).
+    With snap=True: snap boundaries to the nearest detected scene cut (frame-accurate).
     &quot;&quot;&quot;
     # inserts.py sits next to this file; make sure that directory is importable
     # even when launched via the installed `ytsubtran` console command (where the
@@ -1422,7 +1427,15 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
     print(&#x27;✂️  DETECTING INSERTS / INTERSTITIALS&#x27;)
     print(&#x27;=&#x27; * 70)
 
-    if smart:
+    if from_list:
+        print(f&#x27;📄 Reading cut list from: {from_list}&#x27;)
+        try:
+            candidates = inserts.load_cut_list(from_list)
+            source = &#x27;saved list&#x27;
+        except OSError as e:
+            print(f&#x27;✗ Could not read the cut list: {e}&#x27;)
+            return
+    elif smart:
         print(f&#x27;🤖 Smart mode: asking Gemini ({smart_model}) to watch the video...&#x27;)
         candidates, source = inserts.smart_find_inserts(video_file, model=smart_model)
     else:
@@ -1438,6 +1451,13 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
         print(&#x27;No inserts detected.&#x27;)
         return
 
+    # Optionally snap model/list times to real scene cuts for frame accuracy
+    if snap:
+        print(&#x27;🎯 Snapping boundaries to detected scene cuts (frame-accurate)...&#x27;)
+        duration = inserts.ffprobe_duration(video_file)
+        cuts = inserts.scene_cut_times(video_file, duration=duration)
+        candidates = inserts.snap_to_scene_cuts(candidates, cuts)
+
     print(f&#x27;\nFound {len(candidates)} candidate segment(s) via: {source}&#x27;)
     total = 0.0
     for i, seg in enumerate(candidates, 1):
@@ -1446,29 +1466,51 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
         reason = seg[2] if len(seg) &gt; 2 and isinstance(seg[2], str) and seg[2] not in (&#x27;heuristic&#x27;,) else &#x27;&#x27;
         extra = f&#x27;  — {reason}&#x27; if reason else &#x27;&#x27;
         print(f&#x27;  {i:&gt;2}. {int(s // 60):02d}:{s % 60:04.1f} → {int(e // 60):02d}:{e % 60:04.1f}  ({e - s:.1f}s){extra}&#x27;)
-    print(f&#x27;  total to remove: {total:.1f}s&#x27;)
+    print(f&#x27;  total: {total:.1f}s across {len(candidates)} segment(s)&#x27;)
 
-    # Save the cut list next to the output for review
+    # Save the cut list next to the output for review (human-editable).
+    # Skip re-saving when we are working from an existing list.
     base = os.path.splitext(video_file)[0]
     if output_dir:
         base = os.path.join(output_dir, os.path.splitext(os.path.basename(video_file))[0])
     list_path = f&#x27;{base}_inserts.txt&#x27;
-    try:
-        with open(list_path, &#x27;w&#x27;, encoding=&#x27;utf-8&#x27;) as f:
-            for seg in candidates:
-                f.write(f&#x27;{float(seg[0]):.3f}\t{float(seg[1]):.3f}\n&#x27;)
-        print(f&#x27;\n📝 Cut list saved: {list_path}&#x27;)
-    except OSError:
-        pass
+    if not from_list:
+        try:
+            inserts.save_cut_list(list_path, candidates)
+            print(f&#x27;\n📝 Cut list saved: {list_path}&#x27;)
+            print(&#x27;   ✏️  Review/edit it (delete lines to drop segments you don\&#x27;t want), then:&#x27;)
+            print(f&#x27;      extract clips:  --from-list &quot;{list_path}&quot; --extract-inserts&#x27;)
+            print(f&#x27;      or remove them: --from-list &quot;{list_path}&quot; --cut-inserts&#x27;)
+        except OSError:
+            pass
 
-    if not do_cut:
-        print(&#x27;ℹ️  Analysis only. Re-run with --cut-inserts to remove these segments.&#x27;)
+    # --- Action 1: extract each insert as its own named clip (non-destructive) ---
+    if extract:
+        clips_dir = f&#x27;{base}_clips&#x27;
+        print(f&#x27;\n🎬 Extracting {len(candidates)} clip(s) → {clips_dir}\\&#x27;)
+        if clips_copy:
+            print(&#x27;   (stream-copy mode: instant, but each clip starts at the nearest keyframe)&#x27;)
+        else:
+            print(&#x27;   (re-encoding for frame-accurate, editor-ready clips — may take a while)&#x27;)
+        created = inserts.extract_clips(video_file, candidates, clips_dir,
+                                        reencode=not clips_copy)
+        if created:
+            print(f&#x27;\n✓ Done: {len(created)} clip(s) saved in {clips_dir}\\&#x27;)
+        else:
+            print(&#x27;✗ No clips were created (see ffmpeg output above).&#x27;)
         return
 
+    if not do_cut:
+        print(&#x27;\nℹ️  Analysis only.&#x27;)
+        print(&#x27;   • Extract these as separate clips:  --extract-inserts&#x27;)
+        print(&#x27;   • Or remove them from the video:    --cut-inserts&#x27;)
+        return
+
+    # --- Action 2: remove the segments from the video (destructive to a NEW file) ---
     # Confirm before cutting (unless --yes or non-interactive with --yes)
     if not assume_yes and sys.stdin and sys.stdin.isatty():
         try:
-            answer = input(&#x27;\nRemove these segments? [y/N] &#x27;).strip().lower()
+            answer = input(&#x27;\nRemove these segments from the video? [y/N] &#x27;).strip().lower()
         except (EOFError, KeyboardInterrupt):
             answer = &#x27;&#x27;
         if answer not in (&#x27;y&#x27;, &#x27;yes&#x27;, &#x27;t&#x27;, &#x27;tak&#x27;):
@@ -1815,6 +1857,33 @@ Examples:
         help=&#x27;Gemini model for --smart-inserts (default: gemini-2.5-flash).&#x27;
     )
     parser.add_argument(
+        &#x27;--from-list&#x27;,
+        metavar=&#x27;FILE&#x27;,
+        help=&#x27;Cut from a previously saved/edited cut list (e.g. *_inserts.txt) &#x27;
+             &#x27;instead of re-detecting. Skips any second Gemini call; delete lines &#x27;
+             &#x27;in that file to drop segments. Use with --extract-inserts or --cut-inserts.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--extract-inserts&#x27;,
+        action=&#x27;store_true&#x27;,
+        help=&#x27;Save each detected insert as its own named clip (e.g. &#x27;
+             &#x27;&quot;03_02m11s_Animated intro.mp4&quot;) in a &quot;&lt;video&gt;_clips&quot; folder, ready to &#x27;
+             &#x27;reuse in your own videos. Non-destructive; the original is untouched.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--clips-copy&#x27;,
+        action=&#x27;store_true&#x27;,
+        help=&#x27;With --extract-inserts: stream-copy clips (instant, no re-encode), but &#x27;
+             &#x27;each clip starts at the nearest keyframe. Default re-encodes for &#x27;
+             &#x27;frame-accurate boundaries.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--snap-cuts&#x27;,
+        action=&#x27;store_true&#x27;,
+        help=&#x27;Snap insert boundaries to the nearest detected scene cut for &#x27;
+             &#x27;frame-accurate trims (refines the model\&#x27;s ±1 s timestamps).&#x27;
+    )
+    parser.add_argument(
         &#x27;--yes&#x27;,
         action=&#x27;store_true&#x27;,
         help=&#x27;Skip confirmation prompts (e.g. when cutting inserts).&#x27;
@@ -1831,7 +1900,8 @@ Examples:
 
     # Bundle insert-detection options (only if requested)
     inserts_opts = None
-    if args.find_inserts or args.cut_inserts or args.smart_inserts:
+    if (args.find_inserts or args.cut_inserts or args.smart_inserts
+            or args.from_list or args.extract_inserts):
         inserts_opts = dict(
             do_cut=args.cut_inserts,
             use_ai=args.insert_ai,
@@ -1842,6 +1912,10 @@ Examples:
             require_scene_cut=not args.insert_any_audio,
             smart=args.smart_inserts,
             smart_model=args.smart_model,
+            from_list=args.from_list,
+            snap=args.snap_cuts,
+            extract=args.extract_inserts,
+            clips_copy=args.clips_copy,
         )
 
     if args.file:
