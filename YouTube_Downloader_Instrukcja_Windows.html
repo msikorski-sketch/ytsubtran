@@ -393,6 +393,8 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
         <tr><td><code>--find-inserts</code></td><td>Wykryj wstawki/przerywniki (SponsorBlock → skok audio + cięcie sceny). Sama analiza — lista cięć</td><td>flaga</td></tr>
         <tr><td><code>--cut-inserts</code></td><td>Jak wyżej, ale też wytnij wykryte fragmenty do nowego pliku (pyta o potwierdzenie; <code>--yes</code> pomija)</td><td>flaga</td></tr>
         <tr><td><code>--insert-ai</code></td><td>Dodatkowa weryfikacja kandydatów lokalnym modelem Ollama</td><td>flaga</td></tr>
+        <tr><td><code>--smart-inserts</code></td><td>Wykrywanie wstawek modelem Gemini (multimodalnie „ogląda" film). Pyta o klucz API i zapisuje. Wymaga <code>pip install google-genai</code></td><td>flaga</td></tr>
+        <tr><td><code>--smart-model</code></td><td>Model Gemini dla <code>--smart-inserts</code></td><td>gemini-2.5-flash (domyślny)</td></tr>
     </table>
     <div class="tip">
         <strong>Plik lokalny vs YouTube:</strong> przy <code>--file</code> napisy generują się od razu
@@ -1394,10 +1396,14 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
 
 def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=False,
                     ai_model=&#x27;llama3.1&#x27;, assume_yes=False,
-                    min_len=1.5, max_len=15.0, jump_lu=8.0, require_scene_cut=True):
+                    min_len=1.5, max_len=15.0, jump_lu=8.0, require_scene_cut=True,
+                    smart=False, smart_model=&#x27;gemini-2.5-flash&#x27;):
     &quot;&quot;&quot;
     Detects (and optionally cuts) short inserted clips / interstitials.
-    Cascade: SponsorBlock → audio/scene heuristic → optional AI cross-check.
+
+    Default engine: SponsorBlock → audio/scene heuristic → optional AI cross-check.
+    With smart=True: use the Gemini multimodal API to locate inserts (best for
+    visually-defined cutaways that have no audio signature).
     Analysis only by default; cuts only when do_cut=True (after confirmation).
     &quot;&quot;&quot;
     # inserts.py sits next to this file; make sure that directory is importable
@@ -1415,17 +1421,21 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
     print(&#x27;\n&#x27; + &#x27;=&#x27; * 70)
     print(&#x27;✂️  DETECTING INSERTS / INTERSTITIALS&#x27;)
     print(&#x27;=&#x27; * 70)
-    print(&#x27;🔎 Checking SponsorBlock, then the audio/scene heuristic&#x27;
-          + (&#x27; + AI cross-check&#x27; if use_ai else &#x27;&#x27;) + &#x27;...&#x27;)
 
-    candidates, source = inserts.find_inserts(
-        video_file, url=url, use_ai=use_ai, ai_model=ai_model,
-        min_len=min_len, max_len=max_len, jump_lu=jump_lu,
-        require_scene_cut=require_scene_cut,
-    )
+    if smart:
+        print(f&#x27;🤖 Smart mode: asking Gemini ({smart_model}) to watch the video...&#x27;)
+        candidates, source = inserts.smart_find_inserts(video_file, model=smart_model)
+    else:
+        print(&#x27;🔎 Checking SponsorBlock, then the audio/scene heuristic&#x27;
+              + (&#x27; + AI cross-check&#x27; if use_ai else &#x27;&#x27;) + &#x27;...&#x27;)
+        candidates, source = inserts.find_inserts(
+            video_file, url=url, use_ai=use_ai, ai_model=ai_model,
+            min_len=min_len, max_len=max_len, jump_lu=jump_lu,
+            require_scene_cut=require_scene_cut,
+        )
 
     if not candidates:
-        print(&#x27;No inserts detected (nothing in SponsorBlock and no clear audio/scene jumps).&#x27;)
+        print(&#x27;No inserts detected.&#x27;)
         return
 
     print(f&#x27;\nFound {len(candidates)} candidate segment(s) via: {source}&#x27;)
@@ -1433,7 +1443,9 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
     for i, seg in enumerate(candidates, 1):
         s, e = float(seg[0]), float(seg[1])
         total += (e - s)
-        print(f&#x27;  {i:&gt;2}. {int(s // 60):02d}:{s % 60:04.1f} → {int(e // 60):02d}:{e % 60:04.1f}  ({e - s:.1f}s)&#x27;)
+        reason = seg[2] if len(seg) &gt; 2 and isinstance(seg[2], str) and seg[2] not in (&#x27;heuristic&#x27;,) else &#x27;&#x27;
+        extra = f&#x27;  — {reason}&#x27; if reason else &#x27;&#x27;
+        print(f&#x27;  {i:&gt;2}. {int(s // 60):02d}:{s % 60:04.1f} → {int(e // 60):02d}:{e % 60:04.1f}  ({e - s:.1f}s){extra}&#x27;)
     print(f&#x27;  total to remove: {total:.1f}s&#x27;)
 
     # Save the cut list next to the output for review
@@ -1790,6 +1802,19 @@ Examples:
              &#x27;more false positives).&#x27;
     )
     parser.add_argument(
+        &#x27;--smart-inserts&#x27;,
+        action=&#x27;store_true&#x27;,
+        help=&#x27;Use the Gemini multimodal API to detect inserts (best for visual &#x27;
+             &#x27;cutaways with no audio signature). Asks for an API key on first use &#x27;
+             &#x27;and saves it. Combine with --cut-inserts to also remove them.&#x27;
+    )
+    parser.add_argument(
+        &#x27;--smart-model&#x27;,
+        default=&#x27;gemini-2.5-flash&#x27;,
+        metavar=&#x27;MODEL&#x27;,
+        help=&#x27;Gemini model for --smart-inserts (default: gemini-2.5-flash).&#x27;
+    )
+    parser.add_argument(
         &#x27;--yes&#x27;,
         action=&#x27;store_true&#x27;,
         help=&#x27;Skip confirmation prompts (e.g. when cutting inserts).&#x27;
@@ -1806,7 +1831,7 @@ Examples:
 
     # Bundle insert-detection options (only if requested)
     inserts_opts = None
-    if args.find_inserts or args.cut_inserts:
+    if args.find_inserts or args.cut_inserts or args.smart_inserts:
         inserts_opts = dict(
             do_cut=args.cut_inserts,
             use_ai=args.insert_ai,
@@ -1815,6 +1840,8 @@ Examples:
             min_len=args.insert_min_len,
             max_len=args.insert_max_len,
             require_scene_cut=not args.insert_any_audio,
+            smart=args.smart_inserts,
+            smart_model=args.smart_model,
         )
 
     if args.file:

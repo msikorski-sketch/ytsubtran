@@ -27,6 +27,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff>=0.4"]
+smart = ["google-genai>=1.0"]  # for --smart-inserts (Gemini multimodal detection)
 
 [project.urls]
 Homepage = "https://github.com/msikorski-sketch/ytsubtran"

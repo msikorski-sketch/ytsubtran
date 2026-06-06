@@ -303,6 +303,127 @@ def ai_filter_candidates(path, candidates, model='llama3.1'):
 
 
 # ---------------------------------------------------------------------------
+# Gemini (multimodal API) — the strong detector for visually-defined inserts
+# ---------------------------------------------------------------------------
+
+CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.ytsubtran.json')
+
+
+def get_gemini_key():
+    """
+    Returns a Gemini API key from (in order): env var, saved config file, or an
+    interactive prompt (then saved). Returns None if unavailable/non-interactive.
+    """
+    key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+    if key:
+        return key.strip()
+    try:
+        with open(CONFIG_PATH, encoding='utf-8') as f:
+            key = (json.load(f) or {}).get('gemini_api_key')
+            if key:
+                return key.strip()
+    except Exception:
+        pass
+    if not sys.stdin or not sys.stdin.isatty():
+        return None
+    print('\nA Gemini API key is required for --smart-inserts.')
+    print('Get a free key at: https://aistudio.google.com/apikey')
+    try:
+        key = input('Paste your Gemini API key (it will be saved): ').strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    if key:
+        try:
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+                json.dump({'gemini_api_key': key}, f)
+            print(f'✓ Saved to {CONFIG_PATH} (delete that file to remove the key).')
+        except OSError:
+            pass
+    return key or None
+
+
+def _parse_time(value):
+    """Accepts seconds (number) or 'M:SS' / 'H:MM:SS' strings → float seconds."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if ':' in s:
+        parts = [float(p) for p in s.split(':')]
+        total = 0.0
+        for p in parts:
+            total = total * 60 + p
+        return total
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def smart_find_inserts(video_file, model='gemini-2.5-flash'):
+    """
+    Uploads the video to Gemini and asks it to list inserted clips / interstitials
+    with timestamps. Returns (list of (start, end, reason), 'gemini').
+    Returns ([], 'gemini') on any error (missing SDK/key/network).
+    """
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:
+        print('✗ The google-genai SDK is not installed.')
+        print('  Install it with:  pip install -U google-genai')
+        return [], 'gemini'
+
+    key = get_gemini_key()
+    if not key:
+        print('✗ No Gemini API key available — skipping smart detection.')
+        return [], 'gemini'
+
+    try:
+        import time
+        client = genai.Client(api_key=key)
+
+        print('   uploading video to Gemini (may take a while for large files)...')
+        uploaded = client.files.upload(file=video_file)
+        # Wait until the file is processed and ready
+        while getattr(uploaded.state, 'name', str(uploaded.state)) == 'PROCESSING':
+            time.sleep(2)
+            uploaded = client.files.get(name=uploaded.name)
+        if getattr(uploaded.state, 'name', '') == 'FAILED':
+            print('✗ Gemini could not process the uploaded video.')
+            return [], 'gemini'
+
+        prompt = (
+            'This video is mostly a host/people talking to camera. Find every '
+            'INSERTED clip / interstitial / cutaway — short segments (often a few '
+            'seconds, sometimes only a few frames) taken from OTHER footage: memes, '
+            'jokes, reaction clips, bumpers, or clips from a different video that '
+            'interrupt the main talking. Do NOT include normal cuts between shots of '
+            'the same scene. For each insert, give precise start and end times in '
+            'SECONDS from the beginning. Respond as strict JSON: a list of objects '
+            '{"start": <seconds>, "end": <seconds>, "reason": "<short description>"}. '
+            'If there are none, return [].'
+        )
+        print('   asking Gemini to locate inserts...')
+        resp = client.models.generate_content(
+            model=model,
+            contents=[uploaded, prompt],
+            config=types.GenerateContentConfig(response_mime_type='application/json'),
+        )
+        data = json.loads(resp.text)
+        out = []
+        for item in data:
+            s = _parse_time(item.get('start'))
+            e = _parse_time(item.get('end'))
+            if e > s:
+                out.append((s, e, item.get('reason', '')))
+        return sorted(out), 'gemini'
+    except Exception as e:
+        print(f'✗ Gemini request failed: {e}')
+        return [], 'gemini'
+
+
+# ---------------------------------------------------------------------------
 # Cutting
 # ---------------------------------------------------------------------------
 

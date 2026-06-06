@@ -41,6 +41,9 @@ First public release. 🎉
   clips / interstitials via a cascade: SponsorBlock → audio-jump + scene-cut heuristic →
   optional local-Ollama AI cross-check (`--insert-ai`). Analysis-only by default; cutting
   writes a new `*_nocuts.mp4` and never touches the original. (New module `inserts.py`.)
+- **`--smart-inserts`** — detect inserts with the Gemini multimodal API (best for visual
+  cutaways with no audio signature). Prompts for an API key on first use and saves it to
+  `~/.ytsubtran.json` (or `GEMINI_API_KEY`). Requires `pip install google-genai`.
 - Early **ffmpeg check** before downloading, with a clear warning if it's missing.
 - Full Polish installation & usage guide (HTML) and an English technical guide
   (`docs/HOW_IT_WORKS.md`).

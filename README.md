@@ -83,6 +83,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Embed a toggleable subtitle track | `--embed` |
 | Detect inserted clips / interstitials | `--find-inserts` |
 | Cut them out (SponsorBlock → heuristic → AI) | `--cut-inserts` |
+| Smart detection with Gemini (multimodal) | `--smart-inserts` |
 
 ## 📦 Installation
 
@@ -179,6 +180,23 @@ ytsubtran --file clip.mp4 --find-inserts --insert-jump 7 --insert-min-len 2
 
 `--find-inserts` never edits the video — it only proposes a cut list for review.
 `--cut-inserts` writes a new `*_nocuts.mp4`, leaving the original untouched.
+
+### Smart detection (Gemini)
+
+For tightly-edited videos where inserts are *visual* (a cut to other footage, with
+no loudness spike), the audio/scene heuristic has high recall but low precision. For
+those, `--smart-inserts` sends the video to the **Gemini multimodal API**, which
+actually watches it and returns the insert timestamps:
+
+```bash
+pip install google-genai          # one-time
+ytsubtran --file clip.mp4 --smart-inserts                 # list inserts
+ytsubtran --file clip.mp4 --smart-inserts --cut-inserts   # and remove them
+```
+
+On first use it asks for a Gemini API key ([get one free](https://aistudio.google.com/apikey))
+and saves it to `~/.ytsubtran.json` (or read it from `GEMINI_API_KEY`). Note: this
+uploads the video to Google's API.
 
 ## 📚 How it works
 
