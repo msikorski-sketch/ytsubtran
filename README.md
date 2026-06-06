@@ -84,6 +84,9 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Detect inserted clips / interstitials | `--find-inserts` |
 | Cut them out (SponsorBlock → heuristic → AI) | `--cut-inserts` |
 | Smart detection with Gemini (multimodal) | `--smart-inserts` |
+| Save each insert as its own named clip (to reuse) | `--extract-inserts` |
+| Reuse a saved cut list (no second Gemini call) | `--from-list FILE` |
+| Snap cuts to scene boundaries (frame-accurate) | `--snap-cuts` |
 
 ## 📦 Installation
 
@@ -160,10 +163,11 @@ Load the `.srt` in VLC (Subtitles → Add Subtitle File) or keep it next to the 
 | CUDA out of memory | Use `--model turbo`/`medium`; close other GPU apps |
 | Transcription very slow | Install CUDA PyTorch, or use a smaller model |
 
-## ✂️ Removing inserted clips / interstitials
+## ✂️ Inserts: extract them as clips, or cut them out
 
-Short spliced-in clips ("bumpers", meme cuts, joke skits) can be detected and cut
-out with a layered cascade — each layer cross-checks the others:
+Short spliced-in clips ("bumpers", meme cuts, joke skits, intros/outros) can be
+**extracted as separate named clips** (to reuse in your own edits) *or* **cut out**
+of the video. Detection uses a layered cascade — each layer cross-checks the others:
 
 1. **SponsorBlock** — if the YouTube video has community-labeled segments (the
    `filler` category = tangents/jokes), use those exact timestamps.
@@ -181,6 +185,50 @@ ytsubtran --file clip.mp4 --find-inserts --insert-jump 7 --insert-min-len 2
 `--find-inserts` never edits the video — it only proposes a cut list for review.
 `--cut-inserts` writes a new `*_nocuts.mp4`, leaving the original untouched.
 
+### Extract each insert as its own clip (`--extract-inserts`)
+
+When you want to **reuse** the inserts (not delete them), add `--extract-inserts`.
+Each detected segment is saved as a separate, descriptively-named file in a
+`<video>_clips` folder — the original is never modified:
+
+```bash
+ytsubtran --file clip.mp4 --smart-inserts --extract-inserts
+# →  clip_clips/01_00m05s_Animated intro sequence.mp4
+#    clip_clips/02_02m11s_Reaction meme.mp4   …
+```
+
+File names are `NN_MMmSSs_<reason>.mp4` (index, timestamp, and the model's
+description), so you can tell at a glance what each clip is.
+
+### The cut list is editable — and reusable (`--from-list`)
+
+Every detection run writes a plain-text cut list next to the video
+(`<video>_inserts.txt`). It's human-readable and editable:
+
+```
+# Insert cut list — delete a line to drop that segment.
+130.000	143.000	# Animated intro sequence
+756.000	767.000	# Reaction meme
+```
+
+**Delete any line** to drop that segment, then feed the file back with
+`--from-list` to extract or cut **without re-running detection** — so a paid
+Gemini analysis only ever runs **once**:
+
+```bash
+# Re-uses the saved list — zero Gemini calls:
+ytsubtran --file clip.mp4 --from-list "clip_inserts.txt" --extract-inserts
+ytsubtran --file clip.mp4 --from-list "clip_inserts.txt" --cut-inserts
+```
+
+### Fine-tuning the boundaries
+
+- `--snap-cuts` — snap each in/out point to the nearest detected scene cut for
+  frame-accurate trims (refines the model's ±1 s timestamps).
+- `--clips-copy` — with `--extract-inserts`, stream-copy clips (instant, no
+  re-encode) instead of the default frame-accurate re-encode. Faster, but each
+  clip starts at the nearest keyframe.
+
 ### Smart detection (Gemini)
 
 For tightly-edited videos where inserts are *visual* (a cut to other footage, with
@@ -190,13 +238,15 @@ actually watches it and returns the insert timestamps:
 
 ```bash
 pip install google-genai          # one-time
-ytsubtran --file clip.mp4 --smart-inserts                 # list inserts
-ytsubtran --file clip.mp4 --smart-inserts --cut-inserts   # and remove them
+ytsubtran --file clip.mp4 --smart-inserts                    # list inserts
+ytsubtran --file clip.mp4 --smart-inserts --extract-inserts  # save them as clips
+ytsubtran --file clip.mp4 --smart-inserts --cut-inserts      # remove them
 ```
 
 On first use it asks for a Gemini API key ([get one free](https://aistudio.google.com/apikey))
 and saves it to `~/.ytsubtran.json` (or read it from `GEMINI_API_KEY`). Note: this
-uploads the video to Google's API.
+uploads the video to Google's API. Run `--smart-inserts` **once**, then reuse the
+saved `<video>_inserts.txt` with `--from-list` so Gemini is never billed twice.
 
 ## 📚 How it works
 

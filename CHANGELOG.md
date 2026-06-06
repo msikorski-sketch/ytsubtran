@@ -44,6 +44,17 @@ First public release. 🎉
 - **`--smart-inserts`** — detect inserts with the Gemini multimodal API (best for visual
   cutaways with no audio signature). Prompts for an API key on first use and saves it to
   `~/.ytsubtran.json` (or `GEMINI_API_KEY`). Requires `pip install google-genai`.
+- **`--extract-inserts`** — save each detected insert as its own descriptively-named clip
+  (`NN_MMmSSs_<reason>.mp4`) in a `<video>_clips` folder, ready to reuse in your own edits.
+  Non-destructive: the original is never modified. Re-encodes for frame-accurate boundaries
+  by default, or `--clips-copy` for instant keyframe-aligned stream copies.
+- **`--from-list FILE`** — extract or cut from a previously saved/edited cut list
+  (`<video>_inserts.txt`) instead of re-detecting, so a paid Gemini analysis runs only once.
+  The list is plain text — delete lines to drop segments before re-running.
+- **`--snap-cuts`** — snap insert boundaries to the nearest detected scene cut for
+  frame-accurate trims (refines the model's ±1 s timestamps).
+- Non-ASCII filenames (e.g. Polish characters) no longer crash the Gemini upload, and an
+  expired/invalid saved API key is detected and re-prompted automatically.
 - Early **ffmpeg check** before downloading, with a clear warning if it's missing.
 - Full Polish installation & usage guide (HTML) and an English technical guide
   (`docs/HOW_IT_WORKS.md`).

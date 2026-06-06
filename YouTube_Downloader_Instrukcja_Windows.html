@@ -395,6 +395,10 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
         <tr><td><code>--insert-ai</code></td><td>Dodatkowa weryfikacja kandydatów lokalnym modelem Ollama</td><td>flaga</td></tr>
         <tr><td><code>--smart-inserts</code></td><td>Wykrywanie wstawek modelem Gemini (multimodalnie „ogląda" film). Pyta o klucz API i zapisuje. Wymaga <code>pip install google-genai</code></td><td>flaga</td></tr>
         <tr><td><code>--smart-model</code></td><td>Model Gemini dla <code>--smart-inserts</code></td><td>gemini-2.5-flash (domyślny)</td></tr>
+        <tr><td><code>--extract-inserts</code></td><td>Zapisz KAŻDĄ wstawkę jako osobny, nazwany klip (np. <code>03_02m11s_Animowane intro.mp4</code>) w folderze <code>&lt;film&gt;_clips</code> — do użycia we własnych montażach. Nie zmienia oryginału</td><td>flaga</td></tr>
+        <tr><td><code>--from-list</code></td><td>Wytnij/wyodrębnij z wcześniej zapisanej listy cięć (<code>*_inserts.txt</code>) — BEZ ponownego wykrywania i bez drugiego zapytania do Gemini. Usuń linie w pliku, by pominąć fragmenty. Łącz z <code>--extract-inserts</code> lub <code>--cut-inserts</code></td><td>ścieżka do pliku</td></tr>
+        <tr><td><code>--snap-cuts</code></td><td>Dociągnij granice cięć do najbliższego wykrytego cięcia sceny (dokładność klatkowa; doprecyzowuje znaczniki ±1 s od modelu)</td><td>flaga</td></tr>
+        <tr><td><code>--clips-copy</code></td><td>Z <code>--extract-inserts</code>: kopiuj strumień bez przekodowania (błyskawicznie), ale klip zaczyna się od najbliższej klatki kluczowej. Domyślnie przekodowuje dla dokładności klatkowej</td><td>flaga</td></tr>
     </table>
     <div class="tip">
         <strong>Plik lokalny vs YouTube:</strong> przy <code>--file</code> napisy generują się od razu
@@ -466,6 +470,42 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
     <div class="examples">
         <strong>Osadź przełączalną ścieżkę napisów (szybkie, bez kodowania):</strong>
         <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --source-lang pt --translate-to pl --embed</div>
+    </div>
+
+    <h3>Wstawki / przerywniki — wykryj, wyodrębnij jako klipy lub wytnij</h3>
+    <div class="tip">
+        <strong>Pomysł:</strong> krótkie wstawki (memy, klipy z Twitcha, intro/outro, przebitki) możesz
+        albo <strong>zapisać jako osobne, nazwane klipy</strong> do użycia we własnych montażach
+        (<code>--extract-inserts</code>), albo <strong>wyciąć</strong> z filmu (<code>--cut-inserts</code>).
+        Każde wykrycie zapisuje też edytowalną listę cięć <code>&lt;film&gt;_inserts.txt</code> — możesz
+        z niej usunąć linie, a potem wrócić do niej przez <code>--from-list</code> <em>bez</em> ponownego
+        (płatnego) zapytania do Gemini.
+    </div>
+    <div class="examples">
+        <strong>1) Tylko wykryj wstawki (zapisuje listę, nic nie zmienia):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --find-inserts</div>
+    </div>
+    <div class="examples">
+        <strong>2) Inteligentne wykrywanie modelem Gemini (najlepsze do wizualnych przebitek):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --smart-inserts</div>
+    </div>
+    <div class="examples">
+        <strong>3) Wyodrębnij każdą wstawkę jako osobny nazwany klip (folder <code>&lt;film&gt;_clips</code>):</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --smart-inserts --extract-inserts</div>
+    </div>
+    <div class="examples">
+        <strong>4) Z zapisanej/edytowanej listy — wyodrębnij klipy BEZ drugiego zapytania do Gemini:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --from-list "C:\filmy\wideo_inserts.txt" --extract-inserts</div>
+    </div>
+    <div class="examples">
+        <strong>5) Z tej samej listy — wytnij wstawki do nowego pliku <code>*_nocuts.mp4</code>:</strong>
+        <div class="code-block powershell">python .\youtube_downloader.py --file "C:\filmy\wideo.mp4" --from-list "C:\filmy\wideo_inserts.txt" --cut-inserts</div>
+    </div>
+    <div class="warning">
+        <strong>Gemini tylko raz:</strong> uruchom <code>--smart-inserts</code> jeden raz, by powstała
+        lista <code>&lt;film&gt;_inserts.txt</code>. Potem zawsze używaj <code>--from-list "&lt;film&gt;_inserts.txt"</code>
+        — to czyta gotową listę i <strong>nie woła Gemini ponownie</strong>. Otwórz tę listę w Notatniku
+        i usuń linie klipów, których nie chcesz (np. intro/outro kanału).
     </div>
 
     <h2 id="modele">🧠 Modele Whisper — który wybrać</h2>
