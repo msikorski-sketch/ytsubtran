@@ -33,9 +33,9 @@ Homepage = "https://github.com/msikorski-sketch/ytsubtran"
 Documentation = "https://github.com/msikorski-sketch/ytsubtran/blob/main/docs/HOW_IT_WORKS.md"
 Issues = "https://github.com/msikorski-sketch/ytsubtran/issues"
 
-# Single-module project: the whole tool lives in youtube_downloader.py
+# Top-level modules that make up the tool
 [tool.setuptools]
-py-modules = ["youtube_downloader"]
+py-modules = ["youtube_downloader", "inserts"]
 
 # Installs a console command:  ytsubtran "URL" ...
 [project.scripts]

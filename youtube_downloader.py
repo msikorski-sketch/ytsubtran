@@ -834,6 +834,12 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
     Cascade: SponsorBlock → audio/scene heuristic → optional AI cross-check.
     Analysis only by default; cuts only when do_cut=True (after confirmation).
     """
+    # inserts.py sits next to this file; make sure that directory is importable
+    # even when launched via the installed `ytsubtran` console command (where the
+    # current working directory is not automatically on sys.path).
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
     try:
         import inserts
     except Exception as e:
