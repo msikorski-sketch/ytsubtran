@@ -311,25 +311,32 @@ def ai_filter_candidates(path, candidates, model='llama3.1'):
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.ytsubtran.json')
 
 
-def get_gemini_key():
+def get_gemini_key(force_prompt=False):
     """
-    Returns a Gemini API key from (in order): env var, saved config file, or an
-    interactive prompt (then saved). Returns None if unavailable/non-interactive.
+    Returns a Gemini API key. When `force_prompt` is False, it tries (in order):
+    env var, saved config file, then an interactive prompt. When `force_prompt` is
+    True, it skips the env var and saved file and asks the user directly (used to
+    recover from an expired/invalid saved key). Returns None if unavailable or the
+    session is non-interactive.
     """
-    key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
-    if key:
-        return key.strip()
-    try:
-        with open(CONFIG_PATH, encoding='utf-8') as f:
-            key = (json.load(f) or {}).get('gemini_api_key')
-            if key:
-                return key.strip()
-    except Exception:
-        pass
+    if not force_prompt:
+        key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+        if key:
+            return key.strip()
+        try:
+            with open(CONFIG_PATH, encoding='utf-8') as f:
+                key = (json.load(f) or {}).get('gemini_api_key')
+                if key:
+                    return key.strip()
+        except Exception:
+            pass
     if not sys.stdin or not sys.stdin.isatty():
         return None
     print('\nA Gemini API key is required for --smart-inserts.')
     print('Get a free key at: https://aistudio.google.com/apikey')
+    if force_prompt and (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')):
+        print('  Note: GEMINI_API_KEY is set in your environment and overrides the')
+        print('        saved key on the next run — update or unset it there too.')
     try:
         # getpass hides the key as you type so it never appears on screen / in logs.
         key = getpass.getpass('Paste your Gemini API key (hidden, it will be saved): ').strip()
@@ -344,6 +351,14 @@ def get_gemini_key():
         except OSError:
             pass
     return key or None
+
+
+def clear_gemini_key():
+    """Deletes the saved Gemini API key file (e.g. after it expired). No-op if absent."""
+    try:
+        os.remove(CONFIG_PATH)
+    except OSError:
+        pass
 
 
 def _parse_time(value):
@@ -413,10 +428,65 @@ def _ascii_upload_path(video_file):
     return tmp_path, cleanup
 
 
+def _is_invalid_key_error(error):
+    """True if a Gemini error looks like an expired / invalid API key."""
+    text = str(error)
+    return ('API_KEY_INVALID' in text
+            or 'API key expired' in text
+            or 'API key not valid' in text)
+
+
+def _run_gemini(video_file, model, key, genai, types):
+    """Single Gemini attempt with a given key. Raises on API errors (e.g. bad key)."""
+    import time
+    client = genai.Client(api_key=key)
+
+    print('   uploading video to Gemini (may take a while for large files)...')
+    upload_path, _cleanup_upload = _ascii_upload_path(video_file)
+    try:
+        uploaded = client.files.upload(file=upload_path)
+    finally:
+        _cleanup_upload()
+    # Wait until the file is processed and ready
+    while getattr(uploaded.state, 'name', str(uploaded.state)) == 'PROCESSING':
+        time.sleep(2)
+        uploaded = client.files.get(name=uploaded.name)
+    if getattr(uploaded.state, 'name', '') == 'FAILED':
+        print('✗ Gemini could not process the uploaded video.')
+        return []
+
+    prompt = (
+        'This video is mostly a host/people talking to camera. Find every '
+        'INSERTED clip / interstitial / cutaway — short segments (often a few '
+        'seconds, sometimes only a few frames) taken from OTHER footage: memes, '
+        'jokes, reaction clips, bumpers, or clips from a different video that '
+        'interrupt the main talking. Do NOT include normal cuts between shots of '
+        'the same scene. For each insert, give precise start and end times in '
+        'SECONDS from the beginning. Respond as strict JSON: a list of objects '
+        '{"start": <seconds>, "end": <seconds>, "reason": "<short description>"}. '
+        'If there are none, return [].'
+    )
+    print('   asking Gemini to locate inserts...')
+    resp = client.models.generate_content(
+        model=model,
+        contents=[uploaded, prompt],
+        config=types.GenerateContentConfig(response_mime_type='application/json'),
+    )
+    data = json.loads(resp.text)
+    out = []
+    for item in data:
+        s = _parse_time(item.get('start'))
+        e = _parse_time(item.get('end'))
+        if e > s:
+            out.append((s, e, item.get('reason', '')))
+    return sorted(out)
+
+
 def smart_find_inserts(video_file, model='gemini-2.5-flash'):
     """
     Uploads the video to Gemini and asks it to list inserted clips / interstitials
     with timestamps. Returns (list of (start, end, reason), 'gemini').
+    If the saved key is expired/invalid, clears it and prompts for a new one once.
     Returns ([], 'gemini') on any error (missing SDK/key/network).
     """
     try:
@@ -432,52 +502,22 @@ def smart_find_inserts(video_file, model='gemini-2.5-flash'):
         print('✗ No Gemini API key available — skipping smart detection.')
         return [], 'gemini'
 
-    try:
-        import time
-        client = genai.Client(api_key=key)
-
-        print('   uploading video to Gemini (may take a while for large files)...')
-        upload_path, _cleanup_upload = _ascii_upload_path(video_file)
+    for attempt in (1, 2):
         try:
-            uploaded = client.files.upload(file=upload_path)
-        finally:
-            _cleanup_upload()
-        # Wait until the file is processed and ready
-        while getattr(uploaded.state, 'name', str(uploaded.state)) == 'PROCESSING':
-            time.sleep(2)
-            uploaded = client.files.get(name=uploaded.name)
-        if getattr(uploaded.state, 'name', '') == 'FAILED':
-            print('✗ Gemini could not process the uploaded video.')
+            return _run_gemini(video_file, model, key, genai, types), 'gemini'
+        except Exception as e:
+            if attempt == 1 and _is_invalid_key_error(e):
+                print('✗ The saved Gemini API key is invalid or has expired.')
+                clear_gemini_key()
+                key = get_gemini_key(force_prompt=True)
+                if key:
+                    print('   retrying with the new key...')
+                    continue
+                print('✗ No new key provided — skipping smart detection.')
+                return [], 'gemini'
+            print(f'✗ Gemini request failed: {e}')
             return [], 'gemini'
-
-        prompt = (
-            'This video is mostly a host/people talking to camera. Find every '
-            'INSERTED clip / interstitial / cutaway — short segments (often a few '
-            'seconds, sometimes only a few frames) taken from OTHER footage: memes, '
-            'jokes, reaction clips, bumpers, or clips from a different video that '
-            'interrupt the main talking. Do NOT include normal cuts between shots of '
-            'the same scene. For each insert, give precise start and end times in '
-            'SECONDS from the beginning. Respond as strict JSON: a list of objects '
-            '{"start": <seconds>, "end": <seconds>, "reason": "<short description>"}. '
-            'If there are none, return [].'
-        )
-        print('   asking Gemini to locate inserts...')
-        resp = client.models.generate_content(
-            model=model,
-            contents=[uploaded, prompt],
-            config=types.GenerateContentConfig(response_mime_type='application/json'),
-        )
-        data = json.loads(resp.text)
-        out = []
-        for item in data:
-            s = _parse_time(item.get('start'))
-            e = _parse_time(item.get('end'))
-            if e > s:
-                out.append((s, e, item.get('reason', '')))
-        return sorted(out), 'gemini'
-    except Exception as e:
-        print(f'✗ Gemini request failed: {e}')
-        return [], 'gemini'
+    return [], 'gemini'
 
 
 # ---------------------------------------------------------------------------
