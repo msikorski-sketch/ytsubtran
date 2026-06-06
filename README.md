@@ -81,6 +81,8 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Also export WebVTT subtitles | `--vtt` |
 | Burn subtitles into the video | `--burn` |
 | Embed a toggleable subtitle track | `--embed` |
+| Detect inserted clips / interstitials | `--find-inserts` |
+| Cut them out (SponsorBlock → heuristic → AI) | `--cut-inserts` |
 
 ## 📦 Installation
 
@@ -156,6 +158,27 @@ Load the `.srt` in VLC (Subtitles → Add Subtitle File) or keep it next to the 
 | Garbled or looping subtitles | Set `--source-lang` explicitly; use `--model turbo`; add `--prompt` |
 | CUDA out of memory | Use `--model turbo`/`medium`; close other GPU apps |
 | Transcription very slow | Install CUDA PyTorch, or use a smaller model |
+
+## ✂️ Removing inserted clips / interstitials
+
+Short spliced-in clips ("bumpers", meme cuts, joke skits) can be detected and cut
+out with a layered cascade — each layer cross-checks the others:
+
+1. **SponsorBlock** — if the YouTube video has community-labeled segments (the
+   `filler` category = tangents/jokes), use those exact timestamps.
+2. **Heuristic** — otherwise detect short spans with a sudden loudness jump (EBU
+   R128) corroborated by a hard scene cut.
+3. **AI cross-check** (optional, `--insert-ai`) — a local Ollama model confirms
+   each candidate from its transcript.
+
+```bash
+ytsubtran "URL" --find-inserts                 # analyze only: prints/saves a cut list
+ytsubtran "URL" --cut-inserts                  # also remove them (asks first; --yes to skip)
+ytsubtran --file clip.mp4 --find-inserts --insert-jump 7 --insert-min-len 2
+```
+
+`--find-inserts` never edits the video — it only proposes a cut list for review.
+`--cut-inserts` writes a new `*_nocuts.mp4`, leaving the original untouched.
 
 ## 📚 How it works
 

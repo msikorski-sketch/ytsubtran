@@ -37,6 +37,10 @@ First public release. 🎉
 - **`--vtt`** — additionally export subtitles in WebVTT format (for web players).
 - **`--burn`** — hardcode subtitles into the video picture (via ffmpeg `subtitles` filter).
 - **`--embed`** — mux subtitles as a soft, toggleable track into the MP4 (no re-encode).
+- **`--find-inserts` / `--cut-inserts`** — detect (and optionally remove) short inserted
+  clips / interstitials via a cascade: SponsorBlock → audio-jump + scene-cut heuristic →
+  optional local-Ollama AI cross-check (`--insert-ai`). Analysis-only by default; cutting
+  writes a new `*_nocuts.mp4` and never touches the original. (New module `inserts.py`.)
 - Early **ffmpeg check** before downloading, with a clear warning if it's missing.
 - Full Polish installation & usage guide (HTML) and an English technical guide
   (`docs/HOW_IT_WORKS.md`).

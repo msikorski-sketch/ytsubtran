@@ -104,3 +104,20 @@ def test_prompt_output_dir_defaults_to_cwd_when_non_interactive():
     # Under pytest stdin is not a TTY, so it must return the current folder
     # without blocking on input().
     assert yt.prompt_output_dir() == os.getcwd()
+
+
+# ---------------------------------------------------------------------------
+# inserts module (pure helpers)
+# ---------------------------------------------------------------------------
+
+def test_inserts_get_video_id():
+    import inserts
+    assert inserts.get_video_id("https://youtube.com/watch?v=dQw4w9WgXcQ&t=10s") == "dQw4w9WgXcQ"
+    assert inserts.get_video_id("https://example.com/no-id") is None
+
+
+def test_inserts_merge_ranges():
+    import inserts
+    # overlapping + adjacent ranges collapse; tuples may carry extra items
+    ranges = [(0.0, 2.0, 'x'), (1.5, 3.0, 'y'), (10.0, 11.0, 'z')]
+    assert inserts.merge_ranges(ranges) == [(0.0, 3.0), (10.0, 11.0)]

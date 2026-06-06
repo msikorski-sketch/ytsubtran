@@ -826,10 +826,84 @@ def attempt_all_strategies(url, strategies, output_template, output_dir, format_
     return False, None, '\n'.join(combined_output)
 
 
+def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=False,
+                    ai_model='llama3.1', assume_yes=False,
+                    min_len=1.5, max_len=15.0, jump_lu=8.0, require_scene_cut=True):
+    """
+    Detects (and optionally cuts) short inserted clips / interstitials.
+    Cascade: SponsorBlock → audio/scene heuristic → optional AI cross-check.
+    Analysis only by default; cuts only when do_cut=True (after confirmation).
+    """
+    try:
+        import inserts
+    except Exception as e:
+        print(f'\n✗ Insert-detection module unavailable: {e}')
+        return
+
+    print('\n' + '=' * 70)
+    print('✂️  DETECTING INSERTS / INTERSTITIALS')
+    print('=' * 70)
+    print('🔎 Checking SponsorBlock, then the audio/scene heuristic'
+          + (' + AI cross-check' if use_ai else '') + '...')
+
+    candidates, source = inserts.find_inserts(
+        video_file, url=url, use_ai=use_ai, ai_model=ai_model,
+        min_len=min_len, max_len=max_len, jump_lu=jump_lu,
+        require_scene_cut=require_scene_cut,
+    )
+
+    if not candidates:
+        print('No inserts detected (nothing in SponsorBlock and no clear audio/scene jumps).')
+        return
+
+    print(f'\nFound {len(candidates)} candidate segment(s) via: {source}')
+    total = 0.0
+    for i, seg in enumerate(candidates, 1):
+        s, e = float(seg[0]), float(seg[1])
+        total += (e - s)
+        print(f'  {i:>2}. {int(s // 60):02d}:{s % 60:04.1f} → {int(e // 60):02d}:{e % 60:04.1f}  ({e - s:.1f}s)')
+    print(f'  total to remove: {total:.1f}s')
+
+    # Save the cut list next to the output for review
+    base = os.path.splitext(video_file)[0]
+    if output_dir:
+        base = os.path.join(output_dir, os.path.splitext(os.path.basename(video_file))[0])
+    list_path = f'{base}_inserts.txt'
+    try:
+        with open(list_path, 'w', encoding='utf-8') as f:
+            for seg in candidates:
+                f.write(f'{float(seg[0]):.3f}\t{float(seg[1]):.3f}\n')
+        print(f'\n📝 Cut list saved: {list_path}')
+    except OSError:
+        pass
+
+    if not do_cut:
+        print('ℹ️  Analysis only. Re-run with --cut-inserts to remove these segments.')
+        return
+
+    # Confirm before cutting (unless --yes or non-interactive with --yes)
+    if not assume_yes and sys.stdin and sys.stdin.isatty():
+        try:
+            answer = input('\nRemove these segments? [y/N] ').strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ''
+        if answer not in ('y', 'yes', 't', 'tak'):
+            print('Aborted — nothing was cut.')
+            return
+
+    out = f'{base}_nocuts.mp4'
+    print(f'\n✂️  Cutting {len(candidates)} segment(s) → {out}')
+    result = inserts.cut_segments(video_file, candidates, out)
+    if result:
+        print(f'✓ Done: {result}')
+    else:
+        print('✗ Cutting failed (see ffmpeg output above).')
+
+
 def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_model='base',
                      source_lang='pl', translate_to=None, initial_prompt=None,
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
-                     burn=False, embed=False):
+                     burn=False, embed=False, inserts_opts=None):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -956,24 +1030,34 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         print('=' * 60)
         return
 
-    # If downloaded successfully and subtitle generation is enabled
-    if success and generate_subs and format_choice == 'mp4':
-        # If we don't know the exact filename, try to find it
-        if not downloaded_file:
-            # Find the newest MP4 in the directory
-            mp4_files = [f for f in os.listdir(output_dir) if f.endswith('.mp4')]
-            if mp4_files:
-                mp4_files.sort(key=lambda x: os.path.getmtime(os.path.join(output_dir, x)), reverse=True)
-                downloaded_file = mp4_files[0]
+    # Resolve the absolute path of the downloaded file (used by subtitles + inserts)
+    final_path = None
+    if not downloaded_file:
+        exts = MEDIA_EXTENSIONS.get(format_choice, ())
+        media = [f for f in os.listdir(output_dir) if f.lower().endswith(exts)]
+        if media:
+            media.sort(key=lambda x: os.path.getmtime(os.path.join(output_dir, x)), reverse=True)
+            downloaded_file = media[0]
+    if downloaded_file:
+        final_path = downloaded_file if os.path.isabs(downloaded_file) \
+            else os.path.join(output_dir, downloaded_file)
 
-        if downloaded_file:
-            full_path = os.path.join(output_dir, downloaded_file) if not os.path.isabs(downloaded_file) else downloaded_file
-            generate_subtitles_with_whisper(full_path, whisper_model, source_lang, translate_to,
+    # Subtitle generation (MP4 only)
+    if generate_subs and format_choice == 'mp4':
+        if final_path:
+            generate_subtitles_with_whisper(final_path, whisper_model, source_lang, translate_to,
                                             initial_prompt, output_dir, also_vtt, burn, embed)
         else:
             print('\n⚠️  Could not find the downloaded file to generate subtitles.')
     elif generate_subs and format_choice == 'mp3':
         print('\n⚠️  Subtitle generation is only available for the MP4 format.')
+
+    # Insert / interstitial detection (and optional cutting)
+    if inserts_opts:
+        if final_path:
+            process_inserts(final_path, url=url, output_dir=output_dir, **inserts_opts)
+        else:
+            print('\n⚠️  Could not find the downloaded file for insert detection.')
 
 
 def prompt_output_dir():
@@ -1097,6 +1181,47 @@ Examples:
         help='Embed subtitles as a soft, toggleable track in the MP4 (no re-encode '
              '— fast). The viewer can turn them on/off in the player.'
     )
+    parser.add_argument(
+        '--find-inserts',
+        action='store_true',
+        help='Detect short inserted clips / interstitials (SponsorBlock, then an '
+             'audio-jump + scene-cut heuristic). Analysis only — prints/saves a cut list.'
+    )
+    parser.add_argument(
+        '--cut-inserts',
+        action='store_true',
+        help='Like --find-inserts, but also removes the detected segments and saves a '
+             'new video (asks for confirmation first; use --yes to skip the prompt).'
+    )
+    parser.add_argument(
+        '--insert-ai',
+        action='store_true',
+        help='Cross-check heuristic insert candidates with a local Ollama model '
+             '(keeps only confirmed ones). Ignored if Ollama is unavailable.'
+    )
+    parser.add_argument(
+        '--insert-jump', type=float, default=8.0, metavar='LU',
+        help='Loudness jump (LU) that flags an insert candidate (default: 8.0).'
+    )
+    parser.add_argument(
+        '--insert-min-len', type=float, default=1.5, metavar='SEC',
+        help='Minimum insert length in seconds (default: 1.5).'
+    )
+    parser.add_argument(
+        '--insert-max-len', type=float, default=15.0, metavar='SEC',
+        help='Maximum insert length in seconds (default: 15).'
+    )
+    parser.add_argument(
+        '--insert-any-audio',
+        action='store_true',
+        help='Do not require a scene cut next to the audio jump (more candidates, '
+             'more false positives).'
+    )
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='Skip confirmation prompts (e.g. when cutting inserts).'
+    )
 
     args = parser.parse_args()
 
@@ -1107,19 +1232,37 @@ Examples:
     if not args.output_dir:
         args.output_dir = prompt_output_dir()
 
+    # Bundle insert-detection options (only if requested)
+    inserts_opts = None
+    if args.find_inserts or args.cut_inserts:
+        inserts_opts = dict(
+            do_cut=args.cut_inserts,
+            use_ai=args.insert_ai,
+            assume_yes=args.yes,
+            jump_lu=args.insert_jump,
+            min_len=args.insert_min_len,
+            max_len=args.insert_max_len,
+            require_scene_cut=not args.insert_any_audio,
+        )
+
     if args.file:
-        # Local-file mode — no download, generate (and optionally translate) subtitles
+        # Local-file mode — no download
         if not os.path.exists(args.file):
             print(f'✗ File not found: {args.file}')
             sys.exit(1)
-        generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
-                                        args.translate_to, args.prompt, args.output_dir,
-                                        args.vtt, args.burn, args.embed)
+        # Generate subtitles unless the user asked ONLY for insert detection
+        wants_subs = args.subs or bool(args.translate_to) or inserts_opts is None
+        if wants_subs:
+            generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
+                                            args.translate_to, args.prompt, args.output_dir,
+                                            args.vtt, args.burn, args.embed)
+        if inserts_opts:
+            process_inserts(args.file, url=None, output_dir=args.output_dir, **inserts_opts)
     else:  # args.url
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
                          args.cookies_from_browser, args.output_dir, args.vtt,
-                         args.burn, args.embed)
+                         args.burn, args.embed, inserts_opts)
 
 
 if __name__ == '__main__':
