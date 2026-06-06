@@ -22,6 +22,10 @@ env/
 *.wav
 *.ogg
 
+# --- Partial / interrupted downloads ---
+*.part
+incomplete_download_recovered/
+
 # --- Generated subtitles / transcripts ---
 *.srt
 *.vtt
