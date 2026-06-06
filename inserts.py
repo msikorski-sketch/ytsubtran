@@ -19,6 +19,7 @@ happens in a separate, explicit step after review.
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -360,6 +361,56 @@ def _parse_time(value):
         return 0.0
 
 
+def _ascii_upload_path(video_file):
+    """
+    The Gemini SDK puts the file name into an ASCII-only HTTP header, which breaks
+    for non-ASCII paths (e.g. Polish characters like 'ó'). If the path is already
+    pure ASCII, it is returned unchanged. Otherwise we expose the file under an
+    ASCII name without copying its bytes when possible:
+      1) a hardlink in the same (ASCII) directory  → instant, same volume;
+      2) failing that, a full copy into a temp dir  → cross-volume fallback.
+    Returns (upload_path, cleanup) where cleanup() removes any temporary artifact.
+    """
+    abspath = os.path.abspath(video_file)
+    try:
+        abspath.encode('ascii')
+        return abspath, (lambda: None)
+    except UnicodeEncodeError:
+        pass
+
+    ext = os.path.splitext(video_file)[1] or '.mp4'
+    parent = os.path.dirname(abspath)
+
+    def _safe_remove(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    # 1) Hardlink with an ASCII name next to the original (no data copied).
+    try:
+        parent.encode('ascii')
+        link_path = os.path.join(parent, f'ytins_upload_{os.getpid()}{ext}')
+        os.link(abspath, link_path)
+        return link_path, (lambda: _safe_remove(link_path))
+    except (UnicodeEncodeError, OSError):
+        pass
+
+    # 2) Full copy into a temp directory (different volume / FS without hardlinks).
+    tmp_dir = tempfile.mkdtemp(prefix='ytins_up_')
+    tmp_path = os.path.join(tmp_dir, 'upload' + ext)
+    shutil.copy2(abspath, tmp_path)
+
+    def cleanup():
+        _safe_remove(tmp_path)
+        try:
+            os.rmdir(tmp_dir)
+        except OSError:
+            pass
+
+    return tmp_path, cleanup
+
+
 def smart_find_inserts(video_file, model='gemini-2.5-flash'):
     """
     Uploads the video to Gemini and asks it to list inserted clips / interstitials
@@ -384,7 +435,11 @@ def smart_find_inserts(video_file, model='gemini-2.5-flash'):
         client = genai.Client(api_key=key)
 
         print('   uploading video to Gemini (may take a while for large files)...')
-        uploaded = client.files.upload(file=video_file)
+        upload_path, _cleanup_upload = _ascii_upload_path(video_file)
+        try:
+            uploaded = client.files.upload(file=upload_path)
+        finally:
+            _cleanup_upload()
         # Wait until the file is processed and ready
         while getattr(uploaded.state, 'name', str(uploaded.state)) == 'PROCESSING':
             time.sleep(2)
