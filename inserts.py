@@ -16,6 +16,7 @@ Cascade (what the user asked for):
 Design principle: NEVER cut blindly. `find_inserts()` only proposes ranges; cutting
 happens in a separate, explicit step after review.
 """
+import getpass
 import json
 import os
 import re
@@ -330,7 +331,8 @@ def get_gemini_key():
     print('\nA Gemini API key is required for --smart-inserts.')
     print('Get a free key at: https://aistudio.google.com/apikey')
     try:
-        key = input('Paste your Gemini API key (it will be saved): ').strip()
+        # getpass hides the key as you type so it never appears on screen / in logs.
+        key = getpass.getpass('Paste your Gemini API key (hidden, it will be saved): ').strip()
     except (EOFError, KeyboardInterrupt):
         print()
         return None
