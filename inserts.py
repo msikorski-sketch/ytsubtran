@@ -21,6 +21,7 @@ import os
 import re
 import statistics
 import subprocess
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
@@ -99,34 +100,76 @@ def fetch_sponsorblock_segments(video_id, categories=('filler',)):
 # 2) Heuristic: loudness jumps + scene cuts
 # ---------------------------------------------------------------------------
 
-def loudness_timeline(path):
+def _run_ffmpeg_progress(cmd, duration=0.0, label='analyzing'):
+    """
+    Runs an ffmpeg analysis command, streaming a live progress percentage so the
+    user can see it's working (these full-file passes can take minutes). Returns
+    the collected stdout+stderr text for parsing.
+    """
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding='utf-8', errors='replace', bufsize=1)
+    except FileNotFoundError:
+        return ''
+    collected = []
+    last_shown = -10.0
+    for line in proc.stdout:
+        collected.append(line)
+        m = re.search(r'time=(\d+):(\d+):(\d+(?:\.\d+)?)', line)
+        if m and duration > 0:
+            secs = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+            if secs - last_shown >= 3:
+                last_shown = secs
+                pct = min(100.0, secs / duration * 100.0)
+                sys.stdout.write(f'\r   {label}: {pct:5.1f}%  ')
+                sys.stdout.flush()
+    proc.wait()
+    sys.stdout.write(f'\r   {label}: done.        \n')
+    sys.stdout.flush()
+    return ''.join(collected)
+
+
+def loudness_timeline(path, duration=0.0):
     """
     Momentary loudness (LUFS) over time via the ffmpeg ebur128 filter.
-    Returns (times, loudness) parallel lists.
+    Returns (times, loudness) parallel lists. `-vn` skips video decode (faster).
     """
-    r = subprocess.run(
-        ['ffmpeg', '-hide_banner', '-i', path, '-af', 'ebur128=metadata=1',
+    # ametadata=print reliably emits the momentary loudness (lavfi.r128.M) for every
+    # frame to stdout — ffmpeg's ebur128 does not log those lines in every build.
+    out = _run_ffmpeg_progress(
+        ['ffmpeg', '-hide_banner', '-vn', '-i', path,
+         '-af', 'ebur128=metadata=1,ametadata=mode=print:key=lavfi.r128.M:file=-',
          '-f', 'null', '-'],
-        capture_output=True, text=True, encoding='utf-8', errors='replace')
+        duration=duration, label='loudness scan')
     times, loud = [], []
-    for line in r.stderr.splitlines():
-        m = re.search(r't:\s*([\d.]+).*?M:\s*(-?[\d.]+|-inf)', line)
-        if m:
-            times.append(float(m.group(1)))
-            v = m.group(2)
-            loud.append(-120.0 if v == '-inf' else float(v))
+    cur_t = None
+    for line in out.splitlines():
+        mt = re.search(r'pts_time:([\d.]+)', line)
+        if mt:
+            cur_t = float(mt.group(1))
+            continue
+        mm = re.search(r'lavfi\.r128\.M=(-?[\d.]+|-?inf|nan)', line)
+        if mm and cur_t is not None:
+            v = mm.group(1)
+            loud.append(-120.0 if ('inf' in v or v == 'nan') else float(v))
+            times.append(cur_t)
     return times, loud
 
 
-def scene_cut_times(path, threshold=0.4):
-    """Timestamps (s) of hard scene cuts via ffmpeg scene detection."""
-    r = subprocess.run(
-        ['ffmpeg', '-hide_banner', '-i', path,
-         '-filter:v', f"select='gt(scene,{threshold})',showinfo",
+def scene_cut_times(path, threshold=0.3, duration=0.0):
+    """
+    Timestamps (s) of hard scene cuts. The frames are downscaled to 320px wide
+    before scene analysis, which speeds up decoding dramatically without hurting
+    cut detection. `-an` skips the audio.
+    """
+    out = _run_ffmpeg_progress(
+        ['ffmpeg', '-hide_banner', '-an', '-i', path,
+         '-filter:v', f"scale=320:-2,select='gt(scene,{threshold})',showinfo",
          '-f', 'null', '-'],
-        capture_output=True, text=True, encoding='utf-8', errors='replace')
+        duration=duration, label='scene scan')
     cuts = []
-    for line in r.stderr.splitlines():
+    for line in out.splitlines():
         m = re.search(r'pts_time:([\d.]+)', line)
         if m:
             cuts.append(float(m.group(1)))
@@ -143,12 +186,20 @@ def detect_inserts_heuristic(path, min_len=2.0, max_len=20.0, jump_lu=8.0,
 
     Returns a list of (start, end, 'heuristic').
     """
-    times, loud = loudness_timeline(path)
+    duration = ffprobe_duration(path)
+    if duration > 600:
+        print(f'   (long file: ~{duration / 60:.0f} min — full-file analysis may take '
+              'a few minutes; press Ctrl+C to stop)')
+
+    times, loud = loudness_timeline(path, duration=duration)
     if len(times) < 5:
         return []
 
-    baseline = statistics.median(loud)
-    anomalous = [abs(value - baseline) >= jump_lu for value in loud]
+    # Baseline = median of the non-silent samples (so quiet pauses don't skew it).
+    speech = [v for v in loud if v > -50.0]
+    baseline = statistics.median(speech) if speech else statistics.median(loud)
+    # Flag samples that are markedly LOUDER than the baseline (the "audio jump").
+    anomalous = [(value - baseline) >= jump_lu for value in loud]
 
     spans = []
     i, n = 0, len(times)
@@ -165,7 +216,7 @@ def detect_inserts_heuristic(path, min_len=2.0, max_len=20.0, jump_lu=8.0,
             i += 1
 
     if require_scene_cut:
-        cuts = scene_cut_times(path)
+        cuts = scene_cut_times(path, duration=duration)
         if cuts:
             spans = [(s, e) for (s, e) in spans
                      if any(abs(c - s) <= scene_window for c in cuts)]
