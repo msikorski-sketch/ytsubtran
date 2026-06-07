@@ -396,7 +396,7 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
         <tr><td><code>--smart-inserts</code></td><td>Wykrywanie wstawek modelem Gemini (multimodalnie „ogląda" film). Pyta o klucz API i zapisuje. Wymaga <code>pip install google-genai</code></td><td>flaga</td></tr>
         <tr><td><code>--smart-model</code></td><td>Model Gemini dla <code>--smart-inserts</code></td><td>gemini-2.5-flash (domyślny)</td></tr>
         <tr><td><code>--insert-kinds</code></td><td>Które rodzaje wstawek zostawić (Gemini klasyfikuje): <code>clip</code> (klip z innego wideo / mem / b-roll), <code>screenshot</code> (screen na ekranie), <code>caption</code> (napisy/grafika montażysty)</td><td>clip (domyślnie); np. clip,screenshot</td></tr>
-        <tr><td><code>--extract-inserts</code></td><td>Zapisz KAŻDĄ wstawkę jako osobny, nazwany klip (np. <code>03_02m11s_Animowane intro.mp4</code>) w folderze <code>&lt;film&gt;_clips</code> — do użycia we własnych montażach. Nie zmienia oryginału</td><td>flaga</td></tr>
+        <tr><td><code>--extract-inserts</code></td><td>Zapisz KAŻDĄ wstawkę jako osobny, nazwany klip (np. <code>03_02m11s_clip_Animowane intro.mp4</code> — typ w nazwie) w folderze <code>&lt;film&gt;_clips</code> — do użycia we własnych montażach. Nie zmienia oryginału</td><td>flaga</td></tr>
         <tr><td><code>--from-list</code></td><td>Wytnij/wyodrębnij z wcześniej zapisanej listy cięć (<code>*_inserts.txt</code>) — BEZ ponownego wykrywania i bez drugiego zapytania do Gemini. Usuń linie w pliku, by pominąć fragmenty. Łącz z <code>--extract-inserts</code> lub <code>--cut-inserts</code></td><td>ścieżka do pliku</td></tr>
         <tr><td><code>--snap-cuts</code></td><td>Dociągnij granice cięć do najbliższego wykrytego cięcia sceny (dokładność klatkowa; doprecyzowuje znaczniki ±1 s od modelu)</td><td>flaga</td></tr>
         <tr><td><code>--clips-copy</code></td><td>Z <code>--extract-inserts</code>: kopiuj strumień bez przekodowania (błyskawicznie), ale klip zaczyna się od najbliższej klatki kluczowej. Domyślnie przekodowuje dla dokładności klatkowej</td><td>flaga</td></tr>
@@ -1931,8 +1931,9 @@ Examples:
         &#x27;--extract-inserts&#x27;,
         action=&#x27;store_true&#x27;,
         help=&#x27;Save each detected insert as its own named clip (e.g. &#x27;
-             &#x27;&quot;03_02m11s_Animated intro.mp4&quot;) in a &quot;&lt;video&gt;_clips&quot; folder, ready to &#x27;
-             &#x27;reuse in your own videos. Non-destructive; the original is untouched.&#x27;
+             &#x27;&quot;03_02m11s_clip_Animated intro.mp4&quot; — the type label is in the name) &#x27;
+             &#x27;in a &quot;&lt;video&gt;_clips&quot; folder, ready to reuse in your own videos. &#x27;
+             &#x27;Non-destructive; the original is untouched.&#x27;
     )
     parser.add_argument(
         &#x27;--clips-copy&#x27;,

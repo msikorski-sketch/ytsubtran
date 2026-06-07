@@ -627,12 +627,31 @@ def _safe_filename(text, max_len=60):
     return text or 'clip'
 
 
+def _clip_filename(idx, start, reason):
+    """
+    Builds a clip filename like ``03_02m11s_clip_Animated intro.mp4`` from a segment
+    index, start time, and a '[kind] reason' string. The kind (clip/screenshot/
+    caption…) is pulled out of the leading [..] tag and placed as its own label so
+    you can tell the types apart at a glance. Pure/testable.
+    """
+    kind = ''
+    m = re.match(r'\s*\[([^\]]+)\]\s*(.*)', reason or '')
+    if m:
+        kind = re.sub(r'[^a-z0-9]+', '', m.group(1).lower())
+        reason = m.group(2)
+    tag = f'{int(start // 60):02d}m{int(start % 60):02d}s'
+    desc = _safe_filename(reason) if (reason or '').strip() else ''
+    parts = [f'{idx:02d}', tag, kind, desc]
+    return '_'.join(p for p in parts if p) + '.mp4'
+
+
 def extract_clips(path, segments, output_dir, reencode=True):
     """
     Saves EACH segment as its own standalone clip file (does not touch the original
     or join anything). File names are numbered and include the start time and the
     Gemini/heuristic reason, e.g. ``03_02m11s_Animated intro sequence.mp4`` — ready
-    to drop into an editor. Returns the list of created file paths.
+    to drop into an editor; the type label (clip/screenshot/caption) is part of the
+    name, e.g. ``03_02m11s_clip_Animated intro.mp4``. Returns created file paths.
 
     reencode=True  → frame-accurate cut, re-encoded to H.264/AAC (editor-friendly).
     reencode=False → stream copy (instant, but starts at the nearest keyframe).
@@ -644,8 +663,7 @@ def extract_clips(path, segments, output_dir, reencode=True):
         if e <= s:
             continue
         reason = seg[2] if len(seg) > 2 and isinstance(seg[2], str) else ''
-        tag = f'{int(s // 60):02d}m{int(s % 60):02d}s'
-        name = f'{idx:02d}_{tag}_{_safe_filename(reason)}.mp4'
+        name = _clip_filename(idx, s, reason)
         out = os.path.join(output_dir, name)
         if reencode:
             cmd = ['ffmpeg', '-y', '-hide_banner', '-ss', f'{s:.3f}',

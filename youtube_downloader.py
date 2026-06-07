@@ -1322,8 +1322,9 @@ Examples:
         '--extract-inserts',
         action='store_true',
         help='Save each detected insert as its own named clip (e.g. '
-             '"03_02m11s_Animated intro.mp4") in a "<video>_clips" folder, ready to '
-             'reuse in your own videos. Non-destructive; the original is untouched.'
+             '"03_02m11s_clip_Animated intro.mp4" — the type label is in the name) '
+             'in a "<video>_clips" folder, ready to reuse in your own videos. '
+             'Non-destructive; the original is untouched.'
     )
     parser.add_argument(
         '--clips-copy',

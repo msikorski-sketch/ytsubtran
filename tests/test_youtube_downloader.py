@@ -139,6 +139,17 @@ def test_inserts_kind_filter_keeps_only_requested():
     assert len(segs2) == 2
 
 
+def test_inserts_clip_filename_includes_kind():
+    import inserts
+    # kind is pulled out of the [..] tag into its own label
+    assert inserts._clip_filename(3, 131.0, "[clip] Animated intro") == \
+        "03_02m11s_clip_Animated intro.mp4"
+    assert inserts._clip_filename(1, 20.0, "[screenshot] tweet") == \
+        "01_00m20s_screenshot_tweet.mp4"
+    # no kind tag → just index, time, description
+    assert inserts._clip_filename(2, 5.0, "something") == "02_00m05s_something.mp4"
+
+
 def test_inserts_clamp_segments_drops_out_of_range():
     import inserts
     # Video is 783.8s long; detector returned a valid early segment, one that runs
