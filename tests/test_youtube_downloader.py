@@ -121,3 +121,30 @@ def test_inserts_merge_ranges():
     # overlapping + adjacent ranges collapse; tuples may carry extra items
     ranges = [(0.0, 2.0, 'x'), (1.5, 3.0, 'y'), (10.0, 11.0, 'z')]
     assert inserts.merge_ranges(ranges) == [(0.0, 3.0), (10.0, 11.0)]
+
+
+def test_inserts_clamp_segments_drops_out_of_range():
+    import inserts
+    # Video is 783.8s long; detector returned a valid early segment, one that runs
+    # past the end (should be clamped), and two fully beyond the end (junk → dropped).
+    duration = 783.766
+    cands = [
+        (17.0, 18.0, 'intro'),       # valid, untouched
+        (780.0, 800.0, 'tail'),      # end clamped to duration, still long enough
+        (804.0, 805.0, 'junk1'),     # entirely past end → dropped
+        (1302.0, 1303.0, 'junk2'),   # entirely past end → dropped
+    ]
+    kept, dropped = inserts.clamp_segments(cands, duration)
+    assert dropped == 2
+    assert kept[0] == (17.0, 18.0, 'intro')
+    assert kept[1][0] == 780.0 and abs(kept[1][1] - duration) < 1e-6
+    assert kept[1][2] == 'tail'
+
+
+def test_inserts_clamp_segments_no_duration_is_noop():
+    import inserts
+    cands = [(5.0, 9.0, 'a'), (12.0, 13.0, 'b')]
+    kept, dropped = inserts.clamp_segments(cands, 0.0)
+    assert dropped == 0
+    assert kept == [(5.0, 9.0, 'a'), (12.0, 13.0, 'b')]
+

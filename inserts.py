@@ -66,6 +66,34 @@ def merge_ranges(ranges, gap=0.3):
     return merged
 
 
+def clamp_segments(candidates, duration, min_seg=0.05):
+    """
+    Clamps each (start, end[, reason]) segment to the real media length and drops
+    anything that falls outside it.
+
+    Why this exists: external detectors (especially the Gemini multimodal API) can
+    return timestamps PAST the end of the video — their internal sense of time
+    "drifts" on longer clips. Trusting those blindly makes ffmpeg seek beyond the
+    file and write empty 0-byte "clips" (junk). Validating against the true
+    duration at this boundary is the fix.
+
+    Returns (kept, dropped_count) where kept is a list of (start, end, reason).
+    """
+    kept, dropped = [], 0
+    for seg in candidates:
+        s, e = float(seg[0]), float(seg[1])
+        reason = seg[2] if len(seg) > 2 and isinstance(seg[2], str) else ''
+        if duration and duration > 0:
+            s = max(0.0, min(s, duration))
+            e = max(0.0, min(e, duration))
+        if (e - s) >= min_seg:
+            kept.append((s, e, reason))
+        else:
+            dropped += 1
+    return kept, dropped
+
+
+
 # ---------------------------------------------------------------------------
 # 1) SponsorBlock
 # ---------------------------------------------------------------------------
@@ -602,10 +630,18 @@ def extract_clips(path, segments, output_dir, reencode=True):
                    '-c', 'copy', os.path.abspath(out)]
         r = subprocess.run(cmd, capture_output=True, text=True,
                            encoding='utf-8', errors='replace')
-        if r.returncode == 0 and os.path.exists(out):
+        # ffmpeg can exit 0 yet write a header-only file (~hundreds of bytes) when
+        # -ss seeks at/past the end of the video. A real encoded clip is always far
+        # bigger than 1 KB, so treat anything smaller as a failure and delete it.
+        if r.returncode == 0 and os.path.exists(out) and os.path.getsize(out) >= 1024:
             created.append(out)
             print(f'   ✓ {name}')
         else:
+            if os.path.exists(out) and os.path.getsize(out) < 1024:
+                try:
+                    os.remove(out)
+                except OSError:
+                    pass
             print(f'   ✗ failed: {name}')
     return created
 

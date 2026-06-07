@@ -1492,11 +1492,22 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
         return
 
     # Optionally snap model/list times to real scene cuts for frame accuracy
+    duration = inserts.ffprobe_duration(video_file)
     if snap:
         print(&#x27;🎯 Snapping boundaries to detected scene cuts (frame-accurate)...&#x27;)
-        duration = inserts.ffprobe_duration(video_file)
         cuts = inserts.scene_cut_times(video_file, duration=duration)
         candidates = inserts.snap_to_scene_cuts(candidates, cuts)
+
+    # Validate against the real video length: detectors (esp. Gemini) can report
+    # times PAST the end of the video, which otherwise become empty 0-byte clips.
+    candidates, dropped = inserts.clamp_segments(candidates, duration)
+    if dropped:
+        dm, ds = int(duration // 60), duration % 60
+        print(f&#x27;⚠️  Dropped {dropped} segment(s) outside the video length &#x27;
+              f&#x27;({dm:02d}:{ds:04.1f}) — likely detector timing drift.&#x27;)
+    if not candidates:
+        print(&#x27;No valid inserts remain after checking against the video length.&#x27;)
+        return
 
     print(f&#x27;\nFound {len(candidates)} candidate segment(s) via: {source}&#x27;)
     total = 0.0

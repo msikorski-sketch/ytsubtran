@@ -55,6 +55,10 @@ First public release. 🎉
   frame-accurate trims (refines the model's ±1 s timestamps).
 - Non-ASCII filenames (e.g. Polish characters) no longer crash the Gemini upload, and an
   expired/invalid saved API key is detected and re-prompted automatically.
+- Insert timestamps are now validated against the real video length before extracting or
+  cutting: segments past the end of the video (Gemini timing drift) are dropped with a
+  warning instead of producing empty 0-byte "clips", and header-only clip files are
+  cleaned up automatically.
 - Early **ffmpeg check** before downloading, with a clear warning if it's missing.
 - Full Polish installation & usage guide (HTML) and an English technical guide
   (`docs/HOW_IT_WORKS.md`).
