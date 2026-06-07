@@ -185,6 +185,17 @@ ytsubtran --file clip.mp4 --find-inserts --insert-jump 7 --insert-min-len 2
 `--find-inserts` never edits the video — it only proposes a cut list for review.
 `--cut-inserts` writes a new `*_nocuts.mp4`, leaving the original untouched.
 
+### Mark inserts in DaVinci Resolve
+
+[`resolve_markers.py`](resolve_markers.py) drops a coloured **timeline marker** at
+every detected insert, so you can jump between them in Resolve instead of scrubbing.
+Copy it into Resolve's script folder
+(`…/Blackmagic Design/DaVinci Resolve/Support/Fusion/Scripts/Utility/`) and run it
+from **Workspace → Scripts**. It auto-finds the `*_inserts.txt` next to the open
+timeline's video; if the open clip doesn't match, it shows a **picker** of the lists
+in that folder and warns about the mismatch. (If your Resolve build blocks scripting,
+use the planned SRT-subtitle export instead.)
+
 ### Extract each insert as its own clip (`--extract-inserts`)
 
 When you want to **reuse** the inserts (not delete them), add `--extract-inserts`.

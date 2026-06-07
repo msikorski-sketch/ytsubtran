@@ -148,6 +148,24 @@ def test_inserts_kind_filter_keeps_only_requested():
     assert len(segs2) == 2
 
 
+def test_resolve_markers_pure_helpers(tmp_path):
+    import resolve_markers as rm
+    # time parsing
+    assert rm.parse_time("1:30") == 90.0
+    assert rm.parse_time(12.5) == 12.5
+    # seconds → frame
+    assert rm.seconds_to_frame(2.0, 25) == 50
+    assert rm.seconds_to_frame(1.0, 23.976) == 24
+    # match a cut list to the open video's base name
+    lists = ["/x/Other_inserts.txt", "/x/My Clip_inserts.txt"]
+    assert rm.list_for_video("/vids/My Clip.mp4", lists) == "/x/My Clip_inserts.txt"
+    assert rm.list_for_video("/vids/Nope.mp4", lists) is None
+    # load a cut list (round-trips the saved format, ignores comments)
+    p = tmp_path / "v_inserts.txt"
+    p.write_text("# comment\n10.0\t12.0\t# meme\n5\t4\t# bad\n20\t22\n", encoding="utf-8")
+    assert rm.load_cut_list(str(p)) == [(10.0, 12.0, "meme"), (20.0, 22.0, "")]
+
+
 def test_inserts_clip_filename_includes_kind():
     import inserts
     # kind is pulled out of the [..] tag into its own label

@@ -13,6 +13,10 @@ First public release. 🎉
   re-updating yt-dlp.
 
 ### Added
+- **DaVinci Resolve marker script** (`resolve_markers.py`): adds a coloured timeline
+  marker at every detected insert (run from Workspace → Scripts). Auto-matches the
+  cut list to the open timeline's video; if it doesn't match, shows a picker of the
+  lists found in that folder and warns about the mismatch.
 - **Download from YouTube** as MP4 or MP3 with resilient, self-healing logic:
   auto-installs/updates `yt-dlp`, tries multiple format strategies, resumes
   interrupted transfers, bypasses geo-blocks, and diagnoses failures.
