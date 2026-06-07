@@ -572,6 +572,14 @@ Tytuł_filmu_PL.txt           # pełny tekst tłumaczenia</div>
     i ponawia</strong> (YouTube często zmienia coś po swojej stronie). Jeśli mimo to nie działa —
     sprawdź film w przeglądarce lub zaktualizuj ręcznie: <code>pip install -U yt-dlp</code>.</p>
 
+    <h3>„This video is not available" na filmach, które działają w przeglądarce</h3>
+    <p>To zwykle oznacza <strong>brak środowiska JavaScript</strong>, którego nowsze yt-dlp wymaga do
+    rozwiązania zabezpieczeń YouTube (w logu jest ostrzeżenie „No supported JavaScript runtime").
+    Bez niego yt-dlp używa okrojonego klienta i zwraca ten błąd. Zainstaluj <strong>Deno</strong>
+    (yt-dlp wykryje je automatycznie) i otwórz nowy terminal:</p>
+    <div class="code-block powershell">winget install DenoLand.Deno</div>
+    <p>Szczegóły: <a href="https://github.com/yt-dlp/yt-dlp/wiki/EJS">yt-dlp wiki: EJS</a>.</p>
+
     <h3>„Sign in to confirm your age" / „Confirm you're not a bot"</h3>
     <p>Wideo wymaga zalogowania. Skrypt ma do tego wbudowany parametr — przekaż przeglądarkę,
     z której jesteś zalogowany na YouTube:</p>
@@ -1318,6 +1326,21 @@ def diagnose_failure(output):
             &#x27;suggest_update&#x27;: False,
         }
 
+    # Missing JavaScript runtime — modern yt-dlp needs one (Deno) to extract
+    # YouTube. Without it, it falls back to a limited client that often returns
+    # &quot;This video is not available&quot;. Updating yt-dlp does NOT fix this.
+    if &#x27;no supported javascript runtime&#x27; in low or &#x27;js-runtimes&#x27; in low:
+        return {
+            &#x27;message&#x27;: &#x27;yt-dlp needs a JavaScript runtime to extract YouTube videos, &#x27;
+                       &#x27;and none was found. This is the usual cause of &quot;This video is &#x27;
+                       &#x27;not available&quot; on otherwise-watchable videos. Install Deno &#x27;
+                       &#x27;(auto-detected once present) and re-run:\n&#x27;
+                       &#x27;    winget install DenoLand.Deno      (Windows)\n&#x27;
+                       &#x27;    or: https://github.com/yt-dlp/yt-dlp/wiki/EJS\n&#x27;
+                       &#x27;After installing, open a NEW terminal so Deno is on PATH.&#x27;,
+            &#x27;suggest_update&#x27;: False,
+        }
+
     # Problems usually fixed by updating yt-dlp (YouTube-side changes)
     update_signals = [
         &#x27;unable to extract&#x27;, &#x27;nsig extraction&#x27;, &#x27;signature extraction&#x27;,
@@ -1704,7 +1727,9 @@ def download_youtube(raw_url, format_choice=&#x27;mp4&#x27;, generate_subs=False
         print(f&#x27;\nLikely cause: {diag[&quot;message&quot;]}&#x27;)
         print(&#x27;\nWhat you can do:&#x27;)
         print(&#x27;- Check that the video opens in a browser&#x27;)
-        print(&#x27;- For login/age-restricted videos: --cookies-from-browser&#x27;)
+        print(&#x27;- &quot;This video is not available&quot; on watchable videos usually means a&#x27;)
+        print(&#x27;  missing JavaScript runtime: install Deno (winget install DenoLand.Deno)&#x27;)
+        print(&#x27;- For login/age-restricted videos: --cookies-from-browser &lt;browser&gt;&#x27;)
         print(&#x27;- For geo-blocking: turn on a VPN&#x27;)
         print(&#x27;- For HTTP 429: wait a few minutes&#x27;)
         print(&#x27;- Update manually: pip install -U yt-dlp&#x27;)

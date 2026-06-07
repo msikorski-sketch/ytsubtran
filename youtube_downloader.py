@@ -709,6 +709,21 @@ def diagnose_failure(output):
             'suggest_update': False,
         }
 
+    # Missing JavaScript runtime — modern yt-dlp needs one (Deno) to extract
+    # YouTube. Without it, it falls back to a limited client that often returns
+    # "This video is not available". Updating yt-dlp does NOT fix this.
+    if 'no supported javascript runtime' in low or 'js-runtimes' in low:
+        return {
+            'message': 'yt-dlp needs a JavaScript runtime to extract YouTube videos, '
+                       'and none was found. This is the usual cause of "This video is '
+                       'not available" on otherwise-watchable videos. Install Deno '
+                       '(auto-detected once present) and re-run:\n'
+                       '    winget install DenoLand.Deno      (Windows)\n'
+                       '    or: https://github.com/yt-dlp/yt-dlp/wiki/EJS\n'
+                       'After installing, open a NEW terminal so Deno is on PATH.',
+            'suggest_update': False,
+        }
+
     # Problems usually fixed by updating yt-dlp (YouTube-side changes)
     update_signals = [
         'unable to extract', 'nsig extraction', 'signature extraction',
@@ -1095,7 +1110,9 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         print(f'\nLikely cause: {diag["message"]}')
         print('\nWhat you can do:')
         print('- Check that the video opens in a browser')
-        print('- For login/age-restricted videos: --cookies-from-browser')
+        print('- "This video is not available" on watchable videos usually means a')
+        print('  missing JavaScript runtime: install Deno (winget install DenoLand.Deno)')
+        print('- For login/age-restricted videos: --cookies-from-browser <browser>')
         print('- For geo-blocking: turn on a VPN')
         print('- For HTTP 429: wait a few minutes')
         print('- Update manually: pip install -U yt-dlp')

@@ -80,6 +80,15 @@ def test_diagnose_unknown_defaults_to_suggest_update():
     assert diag["suggest_update"] is True
 
 
+def test_diagnose_missing_js_runtime():
+    out = ('WARNING: [youtube] No supported JavaScript runtime could be found. '
+           'Only deno is enabled by default ... See ...EJS\n'
+           'ERROR: [youtube] XX: This video is not available')
+    diag = yt.diagnose_failure(out)
+    assert diag["suggest_update"] is False          # updating yt-dlp won't help
+    assert "deno" in diag["message"].lower()
+
+
 def test_diagnose_cookie_db_error_does_not_suggest_update():
     diag = yt.diagnose_failure("ERROR: Could not copy Chrome cookie database. See ...")
     assert diag["suggest_update"] is False

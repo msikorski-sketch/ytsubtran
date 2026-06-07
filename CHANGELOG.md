@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 First public release. 🎉
 
+### Fixed
+- Diagnose the missing-JavaScript-runtime case ("This video is not available" on
+  watchable videos): the script now points to installing Deno instead of pointlessly
+  re-updating yt-dlp.
+
 ### Added
 - **Download from YouTube** as MP4 or MP3 with resilient, self-healing logic:
   auto-installs/updates `yt-dlp`, tries multiple format strategies, resumes
