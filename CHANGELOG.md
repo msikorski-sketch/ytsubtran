@@ -44,6 +44,9 @@ First public release. 🎉
 - **`--smart-inserts`** — detect inserts with the Gemini multimodal API (best for visual
   cutaways with no audio signature). Prompts for an API key on first use and saves it to
   `~/.ytsubtran.json` (or `GEMINI_API_KEY`). Requires `pip install google-genai`.
+  Gemini classifies each hit as `clip` / `screenshot` / `caption`; `--insert-kinds`
+  controls which are kept (default `clip` only — excludes on-screen screenshots and
+  editor captions).
 - **`--extract-inserts`** — save each detected insert as its own descriptively-named clip
   (`NN_MMmSSs_<reason>.mp4`) in a `<video>_clips` folder, ready to reuse in your own edits.
   Non-destructive: the original is never modified. Re-encodes for frame-accurate boundaries

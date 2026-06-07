@@ -464,7 +464,7 @@ def _is_invalid_key_error(error):
             or 'API key not valid' in text)
 
 
-def _run_gemini(video_file, model, key, genai, types):
+def _run_gemini(video_file, model, key, genai, types, kinds=('clip',)):
     """Single Gemini attempt with a given key. Raises on API errors (e.g. bad key)."""
     import time
     client = genai.Client(api_key=key)
@@ -484,15 +484,22 @@ def _run_gemini(video_file, model, key, genai, types):
         return []
 
     prompt = (
-        'This video is mostly a host/people talking to camera. Find every '
-        'INSERTED clip / interstitial / cutaway — short segments (often a few '
-        'seconds, sometimes only a few frames) taken from OTHER footage: memes, '
-        'jokes, reaction clips, bumpers, or clips from a different video that '
-        'interrupt the main talking. Do NOT include normal cuts between shots of '
-        'the same scene. For each insert, give precise start and end times in '
-        'SECONDS from the beginning. Respond as strict JSON: a list of objects '
-        '{"start": <seconds>, "end": <seconds>, "reason": "<short description>"}. '
-        'If there are none, return [].'
+        'This video is mostly a host (or people) talking to camera, with editing on '
+        'top. Find every moment where something INTERRUPTS or COVERS the main talking '
+        'footage, and classify each by "kind":\n'
+        '  - "clip": the screen switches to DIFFERENT moving video — a clip from '
+        'another video, a meme, a reaction clip, archival/B-roll footage, or an '
+        'intro/transition bumper;\n'
+        '  - "screenshot": a static image, photo or screenshot shown on screen '
+        '(a still image is NOT a clip);\n'
+        '  - "caption": editor-added text, titles, subtitles, lower-thirds, arrows or '
+        'graphics overlaid on the footage.\n'
+        'Do NOT report normal cuts between camera angles of the SAME scene, or simple '
+        'zoom-ins/punch-ins on the same shot.\n'
+        'For each, give precise start and end times in SECONDS from the beginning. '
+        'Respond as strict JSON: a list of objects '
+        '{"start": <seconds>, "end": <seconds>, "kind": "clip|screenshot|caption", '
+        '"reason": "<short description>"}. If there are none, return [].'
     )
     print('   asking Gemini to locate inserts...')
     resp = client.models.generate_content(
@@ -501,19 +508,40 @@ def _run_gemini(video_file, model, key, genai, types):
         config=types.GenerateContentConfig(response_mime_type='application/json'),
     )
     data = json.loads(resp.text)
-    out = []
-    for item in data:
+    out, skipped = _segments_from_gemini(data, kinds)
+    if skipped:
+        print(f'   (filtered out {skipped} segment(s) not matching kinds={sorted(set(kinds))} '
+              '— broaden with --insert-kinds)')
+    return out
+
+
+def _segments_from_gemini(data, kinds=('clip',)):
+    """
+    Turns Gemini's JSON list into (start, end, '[kind] reason') tuples, keeping only
+    the requested kinds. Returns (segments_sorted, skipped_count). Pure/testable.
+    """
+    allowed = {k.lower() for k in kinds} if kinds else set()
+    out, skipped = [], 0
+    for item in data or []:
         s = _parse_time(item.get('start'))
         e = _parse_time(item.get('end'))
-        if e > s:
-            out.append((s, e, item.get('reason', '')))
-    return sorted(out)
+        if e <= s:
+            continue
+        kind = (str(item.get('kind', 'clip')).strip().lower() or 'clip')
+        if allowed and kind not in allowed:
+            skipped += 1
+            continue
+        reason = item.get('reason', '')
+        out.append((s, e, f'[{kind}] {reason}'.strip()))
+    return sorted(out), skipped
 
 
-def smart_find_inserts(video_file, model='gemini-2.5-flash'):
+def smart_find_inserts(video_file, model='gemini-2.5-flash', kinds=('clip',)):
     """
     Uploads the video to Gemini and asks it to list inserted clips / interstitials
-    with timestamps. Returns (list of (start, end, reason), 'gemini').
+    with timestamps, classifying each by kind (clip / screenshot / caption). Only
+    the kinds in `kinds` are kept (default: real video clips only).
+    Returns (list of (start, end, reason), 'gemini').
     If the saved key is expired/invalid, clears it and prompts for a new one once.
     Returns ([], 'gemini') on any error (missing SDK/key/network).
     """
@@ -532,7 +560,7 @@ def smart_find_inserts(video_file, model='gemini-2.5-flash'):
 
     for attempt in (1, 2):
         try:
-            return _run_gemini(video_file, model, key, genai, types), 'gemini'
+            return _run_gemini(video_file, model, key, genai, types, kinds=kinds), 'gemini'
         except Exception as e:
             if attempt == 1 and _is_invalid_key_error(e):
                 print('✗ The saved Gemini API key is invalid or has expired.')

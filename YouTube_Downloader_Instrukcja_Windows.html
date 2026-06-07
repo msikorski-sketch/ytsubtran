@@ -395,6 +395,7 @@ python .\youtube_downloader.py "ADRES_FILMU_YOUTUBE" --subs</div>
         <tr><td><code>--insert-ai</code></td><td>Dodatkowa weryfikacja kandydatów lokalnym modelem Ollama</td><td>flaga</td></tr>
         <tr><td><code>--smart-inserts</code></td><td>Wykrywanie wstawek modelem Gemini (multimodalnie „ogląda" film). Pyta o klucz API i zapisuje. Wymaga <code>pip install google-genai</code></td><td>flaga</td></tr>
         <tr><td><code>--smart-model</code></td><td>Model Gemini dla <code>--smart-inserts</code></td><td>gemini-2.5-flash (domyślny)</td></tr>
+        <tr><td><code>--insert-kinds</code></td><td>Które rodzaje wstawek zostawić (Gemini klasyfikuje): <code>clip</code> (klip z innego wideo / mem / b-roll), <code>screenshot</code> (screen na ekranie), <code>caption</code> (napisy/grafika montażysty)</td><td>clip (domyślnie); np. clip,screenshot</td></tr>
         <tr><td><code>--extract-inserts</code></td><td>Zapisz KAŻDĄ wstawkę jako osobny, nazwany klip (np. <code>03_02m11s_Animowane intro.mp4</code>) w folderze <code>&lt;film&gt;_clips</code> — do użycia we własnych montażach. Nie zmienia oryginału</td><td>flaga</td></tr>
         <tr><td><code>--from-list</code></td><td>Wytnij/wyodrębnij z wcześniej zapisanej listy cięć (<code>*_inserts.txt</code>) — BEZ ponownego wykrywania i bez drugiego zapytania do Gemini. Usuń linie w pliku, by pominąć fragmenty. Łącz z <code>--extract-inserts</code> lub <code>--cut-inserts</code></td><td>ścieżka do pliku</td></tr>
         <tr><td><code>--snap-cuts</code></td><td>Dociągnij granice cięć do najbliższego wykrytego cięcia sceny (dokładność klatkowa; doprecyzowuje znaczniki ±1 s od modelu)</td><td>flaga</td></tr>
@@ -1438,7 +1439,8 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
                     ai_model=&#x27;llama3.1&#x27;, assume_yes=False,
                     min_len=1.5, max_len=15.0, jump_lu=8.0, require_scene_cut=True,
                     smart=False, smart_model=&#x27;gemini-2.5-flash&#x27;,
-                    from_list=None, snap=False, extract=False, clips_copy=False):
+                    from_list=None, snap=False, extract=False, clips_copy=False,
+                    insert_kinds=(&#x27;clip&#x27;,)):
     &quot;&quot;&quot;
     Detects inserts/interstitials and then EITHER extracts them as separate named
     clips (extract=True, the default action), OR removes them from the video
@@ -1477,7 +1479,9 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
             return
     elif smart:
         print(f&#x27;🤖 Smart mode: asking Gemini ({smart_model}) to watch the video...&#x27;)
-        candidates, source = inserts.smart_find_inserts(video_file, model=smart_model)
+        print(f&#x27;   keeping kinds: {&quot;, &quot;.join(insert_kinds)} (change with --insert-kinds)&#x27;)
+        candidates, source = inserts.smart_find_inserts(video_file, model=smart_model,
+                                                        kinds=insert_kinds)
     else:
         print(&#x27;🔎 Checking SponsorBlock, then the audio/scene heuristic&#x27;
               + (&#x27; + AI cross-check&#x27; if use_ai else &#x27;&#x27;) + &#x27;...&#x27;)
@@ -1908,6 +1912,15 @@ Examples:
         help=&#x27;Gemini model for --smart-inserts (default: gemini-2.5-flash).&#x27;
     )
     parser.add_argument(
+        &#x27;--insert-kinds&#x27;,
+        default=&#x27;clip&#x27;,
+        metavar=&#x27;KINDS&#x27;,
+        help=&#x27;With --smart-inserts: which kinds of inserts to keep, comma-separated. &#x27;
+             &#x27;Options: clip (other-video footage / meme / b-roll), screenshot &#x27;
+             &#x27;(static image on screen), caption (editor text/graphics). &#x27;
+             &#x27;Default: clip (real interstitials only). E.g. --insert-kinds clip,screenshot&#x27;
+    )
+    parser.add_argument(
         &#x27;--from-list&#x27;,
         metavar=&#x27;FILE&#x27;,
         help=&#x27;Cut from a previously saved/edited cut list (e.g. *_inserts.txt) &#x27;
@@ -1967,6 +1980,7 @@ Examples:
             snap=args.snap_cuts,
             extract=args.extract_inserts,
             clips_copy=args.clips_copy,
+            insert_kinds=tuple(k.strip().lower() for k in args.insert_kinds.split(&#x27;,&#x27;) if k.strip()) or (&#x27;clip&#x27;,),
         )
 
     if args.file:

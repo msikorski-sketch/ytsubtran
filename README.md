@@ -245,7 +245,12 @@ ytsubtran --file clip.mp4 --smart-inserts --cut-inserts      # remove them
 
 On first use it asks for a Gemini API key ([get one free](https://aistudio.google.com/apikey))
 and saves it to `~/.ytsubtran.json` (or read it from `GEMINI_API_KEY`). Note: this
-uploads the video to Google's API. Run `--smart-inserts` **once**, then reuse the
+uploads the video to Google's API.
+
+Gemini classifies each hit as **`clip`** (footage from another video / meme / B-roll),
+**`screenshot`** (a still image shown on screen), or **`caption`** (editor text/graphics).
+By default only real `clip` interstitials are kept — pick others with
+`--insert-kinds clip,screenshot,caption`. Run `--smart-inserts` **once**, then reuse the
 saved `<video>_inserts.txt` with `--from-list` so Gemini is never billed twice.
 
 ## 📚 How it works

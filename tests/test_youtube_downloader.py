@@ -123,6 +123,22 @@ def test_inserts_merge_ranges():
     assert inserts.merge_ranges(ranges) == [(0.0, 3.0), (10.0, 11.0)]
 
 
+def test_inserts_kind_filter_keeps_only_requested():
+    import inserts
+    data = [
+        {"start": 10, "end": 12, "kind": "clip", "reason": "meme"},
+        {"start": 20, "end": 22, "kind": "screenshot", "reason": "tweet on screen"},
+        {"start": 30, "end": 33, "kind": "caption", "reason": "editor title"},
+        {"start": 5, "end": 4, "kind": "clip", "reason": "bad range"},  # dropped (e<=s)
+    ]
+    segs, skipped = inserts._segments_from_gemini(data, kinds=("clip",))
+    assert [(s, e) for s, e, _ in segs] == [(10.0, 12.0)]
+    assert skipped == 2  # screenshot + caption filtered out
+    # broadening keeps more
+    segs2, _ = inserts._segments_from_gemini(data, kinds=("clip", "screenshot"))
+    assert len(segs2) == 2
+
+
 def test_inserts_clamp_segments_drops_out_of_range():
     import inserts
     # Video is 783.8s long; detector returned a valid early segment, one that runs

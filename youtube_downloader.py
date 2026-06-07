@@ -830,7 +830,8 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
                     ai_model='llama3.1', assume_yes=False,
                     min_len=1.5, max_len=15.0, jump_lu=8.0, require_scene_cut=True,
                     smart=False, smart_model='gemini-2.5-flash',
-                    from_list=None, snap=False, extract=False, clips_copy=False):
+                    from_list=None, snap=False, extract=False, clips_copy=False,
+                    insert_kinds=('clip',)):
     """
     Detects inserts/interstitials and then EITHER extracts them as separate named
     clips (extract=True, the default action), OR removes them from the video
@@ -869,7 +870,9 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
             return
     elif smart:
         print(f'🤖 Smart mode: asking Gemini ({smart_model}) to watch the video...')
-        candidates, source = inserts.smart_find_inserts(video_file, model=smart_model)
+        print(f'   keeping kinds: {", ".join(insert_kinds)} (change with --insert-kinds)')
+        candidates, source = inserts.smart_find_inserts(video_file, model=smart_model,
+                                                        kinds=insert_kinds)
     else:
         print('🔎 Checking SponsorBlock, then the audio/scene heuristic'
               + (' + AI cross-check' if use_ai else '') + '...')
@@ -1300,6 +1303,15 @@ Examples:
         help='Gemini model for --smart-inserts (default: gemini-2.5-flash).'
     )
     parser.add_argument(
+        '--insert-kinds',
+        default='clip',
+        metavar='KINDS',
+        help='With --smart-inserts: which kinds of inserts to keep, comma-separated. '
+             'Options: clip (other-video footage / meme / b-roll), screenshot '
+             '(static image on screen), caption (editor text/graphics). '
+             'Default: clip (real interstitials only). E.g. --insert-kinds clip,screenshot'
+    )
+    parser.add_argument(
         '--from-list',
         metavar='FILE',
         help='Cut from a previously saved/edited cut list (e.g. *_inserts.txt) '
@@ -1359,6 +1371,7 @@ Examples:
             snap=args.snap_cuts,
             extract=args.extract_inserts,
             clips_copy=args.clips_copy,
+            insert_kinds=tuple(k.strip().lower() for k in args.insert_kinds.split(',') if k.strip()) or ('clip',),
         )
 
     if args.file:
