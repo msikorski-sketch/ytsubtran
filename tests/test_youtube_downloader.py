@@ -300,6 +300,20 @@ def test_organize_build_plan_dedupes_and_routes_sidecars(tmp_path):
     assert os.path.basename(sc_dst) == 'Docker images_EN.srt'
 
 
+def test_organize_build_plan_consolidates_course_casing(tmp_path):
+    import organize
+    # Gemini returned the SAME course with different casing for two videos.
+    # Both must land in ONE folder (the first-seen casing), not two near-dupes.
+    (tmp_path / 'a.mp4').write_bytes(b'x')
+    (tmp_path / 'b.mp4').write_bytes(b'x')
+    plan = organize.build_plan(str(tmp_path), [
+        ('a.mp4', {'course': 'Intermediate Docker', 'title': 'Volumes', 'confidence': 1.0}),
+        ('b.mp4', {'course': 'INTERMEDIATE DOCKER', 'title': 'Networking', 'confidence': 1.0}),
+    ])
+    folders = {os.path.basename(os.path.dirname(p.dst)) for p in plan}
+    assert folders == {'Intermediate Docker'}  # one folder, first casing wins
+
+
 def test_organize_collect_sidecars_does_not_grab_other_numbered_files(tmp_path):
     import organize
     # "video (1)" must not greedily match "video (10)"'s subtitles.

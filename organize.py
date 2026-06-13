@@ -334,6 +334,11 @@ def build_plan(folder, analyses):
     """
     plan = []
     taken = {}  # sub-folder (lower) -> set of taken file names (lower)
+    # Consolidate course folders case-insensitively: Gemini may return the same
+    # course as "Intermediate Docker" and "INTERMEDIATE DOCKER" — both must land in
+    # ONE folder (Windows merges them by luck; Linux/network drives would not).
+    # Seed from folders already on disk so we reuse their existing casing.
+    canonical = _existing_dir_casing(folder)  # course (lower) -> folder name to use
     for filename, info in analyses:
         src = os.path.join(folder, filename)
         ext = os.path.splitext(filename)[1]
@@ -341,8 +346,10 @@ def build_plan(folder, analyses):
         if newname is None:
             newname = filename  # _Uncategorized: keep original name
 
+        key = sub.lower()
+        sub = canonical.setdefault(key, sub)  # first-seen (or existing) casing wins
         dst_dir = os.path.join(folder, sub)
-        bucket = taken.setdefault(sub.lower(), _existing_names(dst_dir))
+        bucket = taken.setdefault(key, _existing_names(dst_dir))
         unique = _unique_name(newname, bucket)
         bucket.add(unique.lower())
         dst = os.path.join(dst_dir, unique)
@@ -366,6 +373,22 @@ def _existing_names(dst_dir):
         return {n.lower() for n in os.listdir(dst_dir)}
     except OSError:
         return set()
+
+
+def _existing_dir_casing(folder):
+    """
+    Map of {lower-cased name: actual name} for sub-folders already in `folder`, so a
+    new course that differs only in casing reuses the existing folder's name instead
+    of spawning a near-duplicate. Empty when the folder can't be listed.
+    """
+    out = {}
+    try:
+        for n in os.listdir(folder):
+            if os.path.isdir(os.path.join(folder, n)):
+                out[n.lower()] = n
+    except OSError:
+        pass
+    return out
 
 
 # ---------------------------------------------------------------------------
