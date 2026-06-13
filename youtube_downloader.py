@@ -783,6 +783,103 @@ def diagnose_failure(output):
     }
 
 
+def parse_timestamp(s):
+    """
+    Parse a timestamp like "90", "1:30", "01:30.5", "00:01:30.250" → seconds (float).
+    Returns None when the input is empty or malformed.
+    """
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not s:
+        return None
+    parts = s.split(':')
+    try:
+        nums = [float(p) for p in parts]
+    except ValueError:
+        return None
+    if any(n < 0 for n in nums):
+        return None
+    if len(nums) == 1:
+        return nums[0]
+    if len(nums) == 2:
+        return nums[0] * 60 + nums[1]
+    if len(nums) == 3:
+        return nums[0] * 3600 + nums[1] * 60 + nums[2]
+    return None
+
+
+def build_section_args(start_sec, end_sec, precise=False):
+    """
+    Build the yt-dlp args needed to download only the [start, end] fragment.
+    Either bound may be None (open-ended). Returns [] when both are None.
+    With precise=True adds `--force-keyframes-at-cuts` for frame-accurate trims
+    (re-encodes around the boundary). Off by default because re-encoding the
+    boundary chunk can desync audio on some YouTube streams; the default keeps
+    audio/video in lockstep at the cost of starting at the nearest keyframe.
+    """
+    if start_sec is None and end_sec is None:
+        return []
+    s = f'{start_sec:.3f}' if start_sec is not None else '0'
+    e = f'{end_sec:.3f}' if end_sec is not None else 'inf'
+    args = ['--download-sections', f'*{s}-{e}']
+    if precise:
+        args.append('--force-keyframes-at-cuts')
+    return args
+
+
+def remux_for_resolve(filepath):
+    """
+    Stream-copy remux of an MP4 into a clean container that DaVinci Resolve
+    (free, on Windows) reliably opens. Fixes:
+      • edit lists left over from --download-sections (Resolve mis-syncs them),
+      • negative starting timestamps after a mid-stream cut,
+      • moov atom written at the END of the file (slow scrub / failed import).
+    No re-encoding → no quality loss, finishes in ~1 s for a typical clip.
+    Returns the (possibly unchanged) path.
+    """
+    if not filepath or not os.path.exists(filepath):
+        return filepath
+    if not filepath.lower().endswith('.mp4'):
+        return filepath
+    if not check_ffmpeg_installed():
+        return filepath
+
+    tmp = filepath + '.resolve.tmp.mp4'
+    cmd = [
+        'ffmpeg', '-y',
+        '-i', filepath,
+        '-map', '0',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        '-avoid_negative_ts', 'make_zero',
+        tmp,
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
+        )
+    except FileNotFoundError:
+        return filepath
+
+    if result.returncode != 0 or not os.path.exists(tmp):
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        print('⚠️  DaVinci-Resolve remux step failed — keeping original file.')
+        return filepath
+
+    try:
+        os.replace(tmp, filepath)
+    except OSError:
+        return filepath
+    print('🎬 Remuxed for DaVinci Resolve compatibility (clean MP4, +faststart).')
+    return filepath
+
+
 def try_download(url, format_spec, format_name, output_template, extra_args, output_dir,
                  format_choice, cookies_from_browser=None):
     """
@@ -990,7 +1087,7 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
 def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_model='base',
                      source_lang='pl', translate_to=None, initial_prompt=None,
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
-                     burn=False, embed=False, inserts_opts=None):
+                     burn=False, embed=False, inserts_opts=None, section_args=None):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -1076,6 +1173,15 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         print('Unsupported format.')
         return
 
+    # Fragment download (--start/--end): append --download-sections to every
+    # strategy's extra args so the fallback chain still works.
+    if section_args:
+        strategies = [
+            (spec, name, list(extra or []) + list(section_args))
+            for spec, name, extra in strategies
+        ]
+        print(f'\n✂️  Fragment download: yt-dlp args → {" ".join(section_args)}')
+
     # Try all strategies in order
     success, downloaded_file, output = attempt_all_strategies(
         url, strategies, output_template, output_dir, format_choice, cookies_from_browser
@@ -1130,6 +1236,14 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
     if downloaded_file:
         final_path = downloaded_file if os.path.isabs(downloaded_file) \
             else os.path.join(output_dir, downloaded_file)
+
+    # Make every MP4 we hand off downstream readable by DaVinci Resolve (free):
+    # stream-copy remux that drops edit lists, fixes negative timestamps and
+    # moves the moov atom to the front. Especially important for fragment
+    # downloads (--start/--end), where yt-dlp leaves an edit-list MP4 that
+    # Resolve mis-syncs.
+    if final_path and format_choice == 'mp4':
+        final_path = remux_for_resolve(final_path)
 
     # Subtitle generation (MP4 only)
     if generate_subs and format_choice == 'mp4':
@@ -1191,6 +1305,9 @@ Examples:
 
   # Age-restricted/login video (browser cookies) and a custom output folder:
   %(prog)s "https://youtube.com/watch?v=..." --cookies-from-browser chrome --output-dir "C:\\downloads"
+
+  # Download only a fragment (1:30 → 3:00):
+  %(prog)s "https://youtube.com/watch?v=..." --start 1:30 --end 3:00
         """
     )
     parser.add_argument('url', nargs='?', help='YouTube video link')
@@ -1361,11 +1478,50 @@ Examples:
         action='store_true',
         help='Skip confirmation prompts (e.g. when cutting inserts).'
     )
+    parser.add_argument(
+        '--start',
+        default=None,
+        metavar='TIME',
+        help='Download only the fragment starting at TIME. Formats: SS (90), '
+             'MM:SS (1:30), HH:MM:SS (00:01:30.5). Combine with --end.'
+    )
+    parser.add_argument(
+        '--end',
+        default=None,
+        metavar='TIME',
+        help='End timestamp for the fragment (same formats as --start). '
+             'If omitted with --start, downloads from --start to the end of the video.'
+    )
+    parser.add_argument(
+        '--precise-cut',
+        action='store_true',
+        help='Force frame-accurate trimming at --start/--end boundaries '
+             '(re-encodes the boundary chunks). Off by default because that '
+             're-encode can desync audio on some YouTube streams; without it '
+             'the fragment starts at the nearest keyframe but audio stays in sync.'
+    )
 
     args = parser.parse_args()
 
     if not args.file and not args.url:
         parser.error('Provide a YouTube link or use --file with a path to a file on disk.')
+
+    # --start/--end: parse and validate the fragment timestamps (download-only).
+    section_args = None
+    if args.start or args.end:
+        if args.file:
+            parser.error('--start/--end work only when downloading from a URL, not with --file.')
+        s = parse_timestamp(args.start) if args.start else None
+        e = parse_timestamp(args.end) if args.end else None
+        if args.start and s is None:
+            parser.error(f'Invalid --start timestamp: {args.start!r} '
+                         '(use SS, MM:SS or HH:MM:SS).')
+        if args.end and e is None:
+            parser.error(f'Invalid --end timestamp: {args.end!r} '
+                         '(use SS, MM:SS or HH:MM:SS).')
+        if s is not None and e is not None and e <= s:
+            parser.error('--end must be greater than --start.')
+        section_args = build_section_args(s, e, precise=args.precise_cut)
 
     # Ask where to save results, unless already set via --output-dir (Enter = current folder)
     if not args.output_dir:
@@ -1409,7 +1565,7 @@ Examples:
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
                          args.cookies_from_browser, args.output_dir, args.vtt,
-                         args.burn, args.embed, inserts_opts)
+                         args.burn, args.embed, inserts_opts, section_args)
 
 
 if __name__ == '__main__':
