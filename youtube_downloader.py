@@ -1518,7 +1518,7 @@ Examples:
     parser.add_argument(
         '--organize-frames',
         type=int, default=10, metavar='N',
-        help='How many frames to sample per video for --organize (default: 5).'
+        help='How many frames to sample per video for --organize (default: 10).'
     )
     parser.add_argument(
         '--organize-transcript',

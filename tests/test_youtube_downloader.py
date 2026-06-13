@@ -313,12 +313,20 @@ def test_organize_collect_sidecars_does_not_grab_other_numbered_files(tmp_path):
     assert found == ['video (1).vtt', 'video (1)_EN.srt']
 
 
-def test_organize_frame_times_bias_to_start_and_clamp():
+def test_organize_frame_times_generalizes_to_any_n():
     import organize
-    # with a known duration, times are fractions of it (front-loaded)
-    times = organize._frame_times(200.0, 3)
-    assert times == [4.0, 12.0, 24.0]
-    assert all(t < 200.0 for t in times)
-    # unknown duration → fixed early fallback, exactly n values
-    assert len(organize._frame_times(0.0, 5)) == 5
+    # Works for ANY requested frame count (not a fixed list), so a bigger
+    # --organize-frames really samples more points.
+    for n in (1, 3, 5, 10, 16):
+        times = organize._frame_times(300.0, n)
+        assert len(times) == n                       # one point per requested frame
+        assert times == sorted(times)                # increasing
+        assert len(set(times)) == n                  # all distinct
+        assert 0.0 <= times[0] and times[-1] < 300.0  # inside the video, off the end
+        assert times[0] <= 0.10 * 300.0              # first sample biased to the start
+    # front-loaded: for many frames, most land in the first half of the runtime
+    many = organize._frame_times(300.0, 10)
+    assert sum(t < 150.0 for t in many) > len(many) / 2
+    # unknown duration still returns exactly n distinct points
+    assert len(organize._frame_times(0.0, 10)) == 10
 

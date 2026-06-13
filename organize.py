@@ -109,18 +109,44 @@ def collect_sidecars(folder, video_filename):
 # Evidence: frames + a short transcript
 # ---------------------------------------------------------------------------
 
+# How frames are spread across the runtime. The sampling fractions are generated
+# from a power curve so points cluster toward the START (where the title slide
+# usually is) yet still cover the body of the video. The curve is mapped onto
+# [_FRAME_START, _FRAME_SPAN] so the first sample is just inside the video (not a
+# black frame 0) and the last stays off the very end (end cards / credits). This
+# stays strictly increasing for any --organize-frames N.
+_FRAME_BIAS = 1.7    # >1 pulls samples toward the start; 1.0 = evenly spaced
+_FRAME_START = 0.01  # first sample at ~1% of the runtime
+_FRAME_SPAN = 0.85   # last sample at ~85% of the runtime
+_ASSUMED_DURATION = 600.0  # used only when the real duration can't be probed
+
+
 def _frame_times(duration, n):
     """
     Choose `n` timestamps (seconds) to sample, biased toward the start where the
-    title slide usually lives. Falls back to fixed early times if the duration is
-    unknown. Times past the end are clamped.
+    title slide usually lives. Generalizes to ANY `n` (not a fixed list), so a
+    larger --organize-frames really does sample more points. Returns up to `n`
+    distinct, strictly increasing times inside the video; uses an assumed runtime
+    if `duration` is unknown. Pure/testable.
     """
     n = max(1, n)
-    fracs = [0.02, 0.06, 0.12, 0.25, 0.45, 0.7]
-    if duration and duration > 0:
-        times = [round(f * duration, 3) for f in fracs[:n]]
+    if n == 1:
+        fracs = [0.05]
     else:
-        times = [1.0, 4.0, 10.0, 30.0, 60.0, 120.0][:n]
+        # (i/(n-1)) walks 0→1; raising to _FRAME_BIAS front-loads it; mapping onto
+        # [_FRAME_START, _FRAME_SPAN] keeps it monotonic and off both ends.
+        span = _FRAME_SPAN - _FRAME_START
+        fracs = [round(_FRAME_START + span * (i / (n - 1)) ** _FRAME_BIAS, 4)
+                 for i in range(n)]
+
+    runtime = duration if (duration and duration > 0) else _ASSUMED_DURATION
+    # De-duplicate after rounding (very short clips can collapse adjacent points)
+    seen, times = set(), []
+    for f in fracs:
+        t = round(f * runtime, 3)
+        if t not in seen:
+            seen.add(t)
+            times.append(t)
     return times
 
 
