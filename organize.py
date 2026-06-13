@@ -48,7 +48,10 @@ CLASSIFY_PROMPT = (
     'the COURSE name and the CHAPTER or lesson title directly on screen.\n'
     'Read the frames (and the transcript snippet if given) and identify the video.\n'
     'Respond as a STRICT JSON object with these keys:\n'
-    '  "course":     the overall course / series name (e.g. "Introduction to Docker"). '
+    '  "course":     the name of the MULTI-LESSON course / series this video is one '
+    'lesson of (e.g. "Introduction to Docker"). If the video is STANDALONE (not part '
+    'of a numbered multi-part course), set "course" EQUAL TO the title — do NOT '
+    'invent a generic topic (like "Management" or "Programming") as the course. '
     'Empty string if you cannot tell.\n'
     '  "title":      the title of THIS specific video / lesson / chapter '
     '(e.g. "Docker images"). Empty string if unclear.\n'
@@ -297,19 +300,27 @@ def _unique_name(name, taken):
 def target_for(info, ext):
     """
     Decide the destination sub-folder and base file name for one classified video.
-    Returns (folder, filename, low_confidence). When confidence is too low or the
-    course/title is missing, returns (UNCATEGORIZED, None, True) meaning "leave the
-    original name, just move it aside for review". Pure/testable.
+    Returns (folder, filename, low_confidence). Routes to (UNCATEGORIZED, None, True)
+    — "leave the original name, just move it aside for review" — when:
+      • confidence is below the floor, or the course/title is missing; or
+      • the video is STANDALONE: not one lesson of a multi-part course. We treat
+        course == title with no chapter number as that signal, so a one-off video
+        (e.g. a NotebookLM overview) is not filed under an invented course folder.
+    Only the `course` field decides the folder — we deliberately do NOT fall back to
+    a generic `category`, to avoid spawning guessed topic folders. Pure/testable.
     """
-    course = info.get('course') or info.get('category') or ''
+    course = info.get('course') or ''
     title = info.get('title') or ''
+    number = info.get('number') or ''
     conf = info.get('confidence')
-    low = (conf is not None and conf < CONFIDENCE_FLOOR) or not course or not title
+
+    standalone = (course.strip().lower() == title.strip().lower()) and not number
+    low = (conf is not None and conf < CONFIDENCE_FLOOR) or not course or not title \
+        or standalone
     if low:
         return UNCATEGORIZED, None, True
 
     folder = inserts._safe_filename(course, max_len=80)
-    number = info.get('number') or ''
     stem = f'{number} - {title}' if number else title
     filename = inserts._safe_filename(stem, max_len=120) + ext
     return folder, filename, False
@@ -546,7 +557,7 @@ def organize_folder(folder, model='gemini-2.5-flash', assume_yes=False,
                     analyses.append((name, normalize_info({})))
                     continue
 
-            course = info.get('course') or info.get('category') or '?'
+            course = info.get('course') or '?'
             title = info.get('title') or '?'
             print(f'   → {course} / {title}')
             analyses.append((name, info))
