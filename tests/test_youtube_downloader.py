@@ -250,9 +250,27 @@ def test_organize_target_for_low_confidence_goes_uncategorized():
     # missing course/title also routes to _Uncategorized
     missing = {'course': '', 'title': '', 'confidence': 0.99}
     assert organize.target_for(missing, '.mp4') == (organize.UNCATEGORIZED, None, True)
-    # course missing but category present → category is used as the folder
+    # a missing course is NOT backfilled from `category` — no invented topic folders
     cat_only = {'course': '', 'title': 'Joins', 'category': 'SQL', 'confidence': 0.8}
-    assert organize.target_for(cat_only, '.mp4')[0] == 'SQL'
+    assert organize.target_for(cat_only, '.mp4') == (organize.UNCATEGORIZED, None, True)
+
+
+def test_organize_target_for_standalone_video_goes_uncategorized():
+    import organize
+    # Standalone (not a multi-lesson course): course == title and no chapter number
+    # → left in _Uncategorized instead of getting its own one-file "course" folder.
+    standalone = {'course': 'Foundations of Management', 'title': 'Foundations of Management',
+                  'number': '', 'confidence': 0.9}
+    assert organize.target_for(standalone, '.mp4') == (organize.UNCATEGORIZED, None, True)
+    # case-insensitive match still counts as standalone
+    standalone_ci = {'course': 'INTRO TALK', 'title': 'Intro Talk', 'confidence': 0.9}
+    assert organize.target_for(standalone_ci, '.mp4') == (organize.UNCATEGORIZED, None, True)
+    # but a real lesson of a course (course != title) is still filed normally
+    lesson = {'course': 'Intermediate Docker', 'title': 'Persistent volumes', 'confidence': 1.0}
+    assert organize.target_for(lesson, '.mp4') == ('Intermediate Docker', 'Persistent volumes.mp4', False)
+    # course == title but WITH a chapter number → genuine numbered lesson, kept
+    numbered = {'course': 'Docker', 'title': 'Docker', 'number': '1', 'confidence': 0.9}
+    assert organize.target_for(numbered, '.mp4') == ('Docker', '1 - Docker.mp4', False)
 
 
 def test_organize_target_for_sanitizes_illegal_filename_chars():
