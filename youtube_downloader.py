@@ -1500,11 +1500,40 @@ Examples:
              're-encode can desync audio on some YouTube streams; without it '
              'the fragment starts at the nearest keyframe but audio stays in sync.'
     )
+    parser.add_argument(
+        '--organize',
+        metavar='DIR',
+        help='Catalog mode: scan DIR for generically-named lecture videos (e.g. '
+             'DataCamp\'s "video (1).mp4"), figure out each one\'s course/title from '
+             'its slides + a short transcript (Gemini), then rename and sort them '
+             'into per-course sub-folders. Previews the plan and asks before moving '
+             'anything (use --yes to skip the prompt).'
+    )
+    parser.add_argument(
+        '--organize-model',
+        default='gemini-2.5-flash',
+        metavar='MODEL',
+        help='Gemini model used by --organize (default: gemini-2.5-flash).'
+    )
+    parser.add_argument(
+        '--organize-frames',
+        type=int, default=10, metavar='N',
+        help='How many frames to sample per video for --organize (default: 5).'
+    )
+    parser.add_argument(
+        '--organize-transcript',
+        action='store_true',
+        help='With --organize: also transcribe each video\'s intro with Whisper and '
+             'feed it to Gemini. Off by default — the title text on the slides is '
+             'enough for most course videos, and skipping Whisper is much faster. '
+             'Turn it on for videos with no on-screen title.'
+    )
 
     args = parser.parse_args()
 
-    if not args.file and not args.url:
-        parser.error('Provide a YouTube link or use --file with a path to a file on disk.')
+    if not args.file and not args.url and not args.organize:
+        parser.error('Provide a YouTube link, use --file with a path to a file on disk, '
+                     'or use --organize with a folder to catalog.')
 
     # --start/--end: parse and validate the fragment timestamps (download-only).
     section_args = None
@@ -1522,6 +1551,29 @@ Examples:
         if s is not None and e is not None and e <= s:
             parser.error('--end must be greater than --start.')
         section_args = build_section_args(s, e, precise=args.precise_cut)
+
+    # Catalog mode is a standalone action — it scans a folder and renames/sorts the
+    # videos already there (no download, no subtitles). Handle it and exit early.
+    if args.organize:
+        # organize.py sits next to this file; make sure that directory is importable
+        # even when launched via the installed `ytsubtran` console command.
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        try:
+            import organize
+        except Exception as e:
+            print(f'✗ Catalog module unavailable: {e}')
+            sys.exit(1)
+        organize.organize_folder(
+            args.organize,
+            model=args.organize_model,
+            assume_yes=args.yes,
+            frames_n=args.organize_frames,
+            do_transcript=args.organize_transcript,
+            whisper_model=args.model,
+        )
+        return
 
     # Ask where to save results, unless already set via --output-dir (Enter = current folder)
     if not args.output_dir:

@@ -5,6 +5,8 @@ These import youtube_downloader directly, which only needs the standard library
 at import time (whisper/torch/yt-dlp are imported lazily inside functions), so the
 tests run fast and without the heavy dependencies installed.
 """
+import os
+
 import youtube_downloader as yt
 
 
@@ -201,4 +203,122 @@ def test_inserts_clamp_segments_no_duration_is_noop():
     kept, dropped = inserts.clamp_segments(cands, 0.0)
     assert dropped == 0
     assert kept == [(5.0, 9.0, 'a'), (12.0, 13.0, 'b')]
+
+
+# ---------------------------------------------------------------------------
+# organize module (catalog mode — pure helpers)
+# ---------------------------------------------------------------------------
+
+def test_organize_normalize_info_tolerant_of_aliases_and_bad_confidence():
+    import organize
+    info = organize.normalize_info({
+        'series': 'Introduction to Docker',   # alias for "course"
+        'lesson': 'Docker images',            # alias for "title"
+        'topic': 'Docker',                    # alias for "category"
+        'chapter': 2,                         # alias for "number", numeric
+        'confidence': 'high',                 # non-numeric → None
+    })
+    assert info['course'] == 'Introduction to Docker'
+    assert info['title'] == 'Docker images'
+    assert info['category'] == 'Docker'
+    assert info['number'] == '2'
+    assert info['confidence'] is None
+    # confidence is clamped to [0, 1]
+    assert organize.normalize_info({'confidence': 1.5})['confidence'] == 1.0
+    # missing/garbage input never crashes
+    assert organize.normalize_info(None)['course'] == ''
+
+
+def test_organize_target_for_builds_course_folder_and_numbered_name():
+    import organize
+    info = {'course': 'Introduction to Docker', 'title': 'Docker images',
+            'category': 'Docker', 'number': '2', 'confidence': 0.9}
+    folder, filename, low = organize.target_for(info, '.mp4')
+    assert folder == 'Introduction to Docker'
+    assert filename == '2 - Docker images.mp4'
+    assert low is False
+    # no visible number → title only
+    info2 = dict(info, number='')
+    assert organize.target_for(info2, '.mp4')[1] == 'Docker images.mp4'
+
+
+def test_organize_target_for_low_confidence_goes_uncategorized():
+    import organize
+    # below the confidence floor → left for review, original name kept (None)
+    low_conf = {'course': 'X', 'title': 'Y', 'confidence': 0.1}
+    assert organize.target_for(low_conf, '.mp4') == (organize.UNCATEGORIZED, None, True)
+    # missing course/title also routes to _Uncategorized
+    missing = {'course': '', 'title': '', 'confidence': 0.99}
+    assert organize.target_for(missing, '.mp4') == (organize.UNCATEGORIZED, None, True)
+    # course missing but category present → category is used as the folder
+    cat_only = {'course': '', 'title': 'Joins', 'category': 'SQL', 'confidence': 0.8}
+    assert organize.target_for(cat_only, '.mp4')[0] == 'SQL'
+
+
+def test_organize_target_for_sanitizes_illegal_filename_chars():
+    import organize
+    info = {'course': 'C++: Pointers/Refs', 'title': 'What? <Intro>',
+            'number': '', 'confidence': 0.9}
+    folder, filename, _ = organize.target_for(info, '.mp4')
+    # Windows-illegal characters (\ / : * ? " < > |) are stripped
+    for ch in '\\/:*?"<>|':
+        assert ch not in folder
+        assert ch not in filename
+
+
+def test_organize_unique_name_numbers_collisions():
+    import organize
+    taken = {'docker images.mp4'}
+    assert organize._unique_name('Docker images.mp4', taken) == 'Docker images (2).mp4'
+    taken.add('docker images (2).mp4')
+    assert organize._unique_name('Docker images.mp4', taken) == 'Docker images (3).mp4'
+    # a free name is returned unchanged
+    assert organize._unique_name('Fresh.mp4', taken) == 'Fresh.mp4'
+
+
+def test_organize_build_plan_dedupes_and_routes_sidecars(tmp_path):
+    import organize
+    # Two videos classify to the SAME course+title → second must be numbered.
+    # A side-car subtitle file rides along, renamed to the new stem.
+    (tmp_path / 'video (1).mp4').write_bytes(b'x')
+    (tmp_path / 'video (1)_EN.srt').write_text('subs', encoding='utf-8')
+    (tmp_path / 'video (2).mp4').write_bytes(b'x')
+    info = {'course': 'Intro to Docker', 'title': 'Docker images',
+            'number': '', 'confidence': 0.9}
+    plan = organize.build_plan(str(tmp_path), [
+        ('video (1).mp4', info),
+        ('video (2).mp4', info),
+    ])
+    names = [os.path.basename(p.dst) for p in plan]
+    assert names == ['Docker images.mp4', 'Docker images (2).mp4']
+    # both land in the per-course folder
+    assert all(os.path.basename(os.path.dirname(p.dst)) == 'Intro to Docker' for p in plan)
+    # the side-car follows the first video and gets the new stem
+    assert plan[0].sidecars
+    sc_src, sc_dst = plan[0].sidecars[0]
+    assert os.path.basename(sc_src) == 'video (1)_EN.srt'
+    assert os.path.basename(sc_dst) == 'Docker images_EN.srt'
+
+
+def test_organize_collect_sidecars_does_not_grab_other_numbered_files(tmp_path):
+    import organize
+    # "video (1)" must not greedily match "video (10)"'s subtitles.
+    (tmp_path / 'video (1).mp4').write_bytes(b'x')
+    (tmp_path / 'video (1)_EN.srt').write_text('a', encoding='utf-8')
+    (tmp_path / 'video (1).vtt').write_text('b', encoding='utf-8')
+    (tmp_path / 'video (10)_EN.srt').write_text('c', encoding='utf-8')
+    (tmp_path / 'video (1).mp3').write_text('d', encoding='utf-8')  # not a sidecar ext
+    found = organize.collect_sidecars(str(tmp_path), 'video (1).mp4')
+    # returned sorted; '.' sorts before '_', and the .mp3 is not a sidecar type
+    assert found == ['video (1).vtt', 'video (1)_EN.srt']
+
+
+def test_organize_frame_times_bias_to_start_and_clamp():
+    import organize
+    # with a known duration, times are fractions of it (front-loaded)
+    times = organize._frame_times(200.0, 3)
+    assert times == [4.0, 12.0, 24.0]
+    assert all(t < 200.0 for t in times)
+    # unknown duration → fixed early fallback, exactly n values
+    assert len(organize._frame_times(0.0, 5)) == 5
 

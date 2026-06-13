@@ -87,6 +87,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Save each insert as its own named clip (to reuse) | `--extract-inserts` |
 | Reuse a saved cut list (no second Gemini call) | `--from-list FILE` |
 | Snap cuts to scene boundaries (frame-accurate) | `--snap-cuts` |
+| Catalog a folder of unnamed lecture videos | `--organize "C:\downloads"` |
 
 ## 📦 Installation
 
@@ -263,6 +264,60 @@ Gemini classifies each hit as **`clip`** (footage from another video / meme / B-
 By default only real `clip` interstitials are kept — pick others with
 `--insert-kinds clip,screenshot,caption`. Run `--smart-inserts` **once**, then reuse the
 saved `<video>_inserts.txt` with `--from-list` so Gemini is never billed twice.
+
+## 🗂️ Catalog a folder of unnamed videos (`--organize`)
+
+Course platforms like **DataCamp** let you download a lesson with a button, but it
+lands on disk as `video (1).mp4`, `video (2).mp4`, … — no hint of which course it
+belongs to. Catalog mode reads each file's slides (which usually print the course
+and chapter title), asks Gemini what it is, then renames and sorts everything into
+per-course folders:
+
+```bash
+ytsubtran --organize "C:\Users\me\Downloads"
+```
+
+Turns this:
+
+```text
+Downloads\
+  video (1).mp4
+  video (2).mp4
+  video (3).mp4
+```
+
+into this:
+
+```text
+Downloads\
+  Introduction to Docker\
+    1 - What is Docker.mp4
+    2 - Docker images.mp4
+  Intermediate Python\
+    Pandas basics.mp4
+```
+
+It **previews the full plan and asks before moving anything** (use `--yes` to skip
+the prompt). Files it can't confidently identify are left untouched in an
+`_Uncategorized\` folder for you to sort by hand. Any matching subtitle/transcript
+side-cars (`.srt`/`.vtt`/`.txt`) follow their video and are renamed with it.
+
+| Tweak | Flag |
+|---|---|
+| Skip the confirmation prompt | `--yes` |
+| Also use the intro transcript (Whisper) | `--organize-transcript` |
+| Sample more/fewer frames per video | `--organize-frames 8` |
+| Pick the Gemini model | `--organize-model gemini-2.5-pro` |
+
+By default it classifies from the **frames only** — for slide-based courses the
+title is printed on screen, so that is both accurate and fast (no Whisper pass). Add
+`--organize-transcript` to also transcribe each intro for videos with no on-screen
+title. Press **Ctrl+C** at any time to stop scanning and still get a plan for what
+was processed so far.
+
+Like `--smart-inserts`, this uses the **Gemini multimodal API** and reuses the same
+saved key (`~/.ytsubtran.json` or `GEMINI_API_KEY`). It uploads only a handful of
+frames per video (not the whole file), so it stays cheap and fast.
 
 ## 📚 How it works
 

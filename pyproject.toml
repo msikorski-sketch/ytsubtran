@@ -36,7 +36,7 @@ Issues = "https://github.com/msikorski-sketch/ytsubtran/issues"
 
 # Top-level modules that make up the tool
 [tool.setuptools]
-py-modules = ["youtube_downloader", "inserts"]
+py-modules = ["youtube_downloader", "inserts", "organize"]
 
 # Installs a console command:  ytsubtran "URL" ...
 [project.scripts]

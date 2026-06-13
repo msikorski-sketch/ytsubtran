@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Catalog mode** (`--organize DIR`): tidy a folder of generically-named lecture
+  videos (e.g. DataCamp's `video (1).mp4`). It reads a few frames from each video
+  (the slides usually print the course + chapter title), asks Gemini what it is, then
+  renames each file to its lesson title and sorts it into a per-course sub-folder.
+  Previews the full plan and asks before moving anything (`--yes` to skip);
+  unidentifiable files are left in `_Uncategorized\`; matching `.srt`/`.vtt`/`.txt`
+  side-cars follow their video. Classifies from frames only by default (fast, no
+  Whisper); add `--organize-transcript` to also feed Whisper's intro transcript.
+  Press Ctrl+C to stop scanning early and still get a plan for what was processed.
+  Tunable via `--organize-model` and `--organize-frames`. Reuses the same Gemini key
+  handling as `--smart-inserts` and uploads only a few frames per video (not the
+  whole file), so it stays cheap.
+
 ## [1.0.0] - 2026-05-30
 
 First public release. 🎉
