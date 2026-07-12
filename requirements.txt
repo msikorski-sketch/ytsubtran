@@ -3,6 +3,11 @@ yt-dlp>=2025.1.1
 openai-whisper>=20240930
 deep-translator>=1.11.4
 
+# OPTIONAL: higher-accuracy transcription with Qwen3-ASR (--engine qwen/hybrid).
+# Needs a CUDA GPU; models (~5.5 GB) download on first use. hf_xet makes that
+# download many times faster:
+#   pip install -U qwen-asr hf_xet
+
 # PyTorch is installed automatically as a dependency of openai-whisper (CPU build).
 # For NVIDIA GPU acceleration, reinstall the CUDA build instead, e.g.:
 #   pip uninstall -y torch
