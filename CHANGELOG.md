@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Qwen3-ASR engine** (`--engine qwen|hybrid|auto|whisper`, `--qwen-model`): optional
+  higher-accuracy transcription with Alibaba's Qwen3-ASR-1.7B (`pip install qwen-asr`,
+  CUDA GPU recommended). `qwen` uses ForcedAligner timestamps (11 languages, incl.
+  Japanese — not Polish); for the other Qwen languages it automatically switches to
+  the new `hybrid` mode: Whisper provides segment timing, Qwen re-transcribes each
+  segment for better text, and an agreement report cross-checks both engines
+  (strongly differing segments are printed with both versions). `auto` (new default)
+  prefers Qwen when installed and a GPU is present, and quietly behaves as before
+  otherwise; any Qwen failure falls back to Whisper instead of aborting. `--prompt`
+  context biasing works with both engines. Implemented in the new `qwen_engine.py`
+  module; subtitle saving/translation/burn/embed is now shared by all engines.
 - **Catalog mode** (`--organize DIR`): tidy a folder of generically-named lecture
   videos (e.g. DataCamp's `video (1).mp4`). It reads a few frames from each video
   (the slides usually print the course + chapter title), asks Gemini what it is, then

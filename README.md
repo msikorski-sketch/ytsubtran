@@ -1,6 +1,6 @@
 # 🎬 YouTube Downloader + AI Subtitles
 
-> Download any YouTube video (or use a local file), generate subtitles with **OpenAI Whisper**, and **translate them into any language** — fully automated, GPU-accelerated, and resilient to errors.
+> Download any YouTube video (or use a local file), generate subtitles with **OpenAI Whisper** or **Qwen3-ASR** (higher accuracy, incl. a hybrid cross-check mode), and **translate them into any language** — fully automated, GPU-accelerated, and resilient to errors.
 
 <p align="center">
   <a href="https://github.com/msikorski-sketch/ytsubtran/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/msikorski-sketch/ytsubtran/actions/workflows/ci.yml/badge.svg"></a>
@@ -71,6 +71,8 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Download video (MP4) | `ytsubtran "URL"` |
 | Download audio only (MP3) | `... --format mp3` |
 | Generate subtitles | `... --subs` |
+| Best-quality transcription (Qwen3-ASR) | `... --subs --engine qwen` |
+| Cross-check Whisper with Qwen (any language) | `... --subs --engine hybrid` |
 | Translate subtitles → Polish | `... --subs --source-lang es --translate-to pl` |
 | Auto-detect spoken language | `... --source-lang auto` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
@@ -134,12 +136,45 @@ The script auto-detects the GPU, reports its name and VRAM, transcribes with `fp
 
 Any name Whisper supports works — newer models will too, no code changes needed.
 
+## 🎯 Transcription engines: Whisper vs Qwen3-ASR (`--engine`)
+
+Since 2026 Whisper is no longer the most accurate open ASR model. The script also
+supports **Qwen3-ASR** (Alibaba, Apache-2.0), which beats Whisper on benchmarks —
+especially for Japanese, Chinese and Korean — and runs locally on your GPU:
+
+```bash
+pip install -U qwen-asr        # one-time; models download on first use (~5.5 GB)
+```
+
+| Engine | What it does | Best for |
+|---|---|---|
+| `--engine auto` *(default)* | Qwen3-ASR if installed + CUDA GPU present, else Whisper | everyday use |
+| `--engine qwen` | Qwen3-ASR + ForcedAligner timestamps | ja, en, zh, ko, es, de, fr, it, pt, ru, yue |
+| `--engine hybrid` | Whisper timestamps + Qwen text, plus an agreement report | **Polish** and other languages the aligner can't timestamp; verifying Whisper |
+| `--engine whisper` | classic Whisper only | no GPU, minimal installs |
+
+Notes:
+
+- Qwen's aligner (timestamps) covers 11 languages — **Japanese yes, Polish no**.
+  For Polish (and the rest of Qwen's 30 languages) `qwen` automatically switches
+  to `hybrid`: Whisper provides the timing, Qwen re-transcribes each segment for
+  better text, and you get a Whisper-vs-Qwen agreement report (a built-in
+  cross-check; strongly differing segments are listed with both versions).
+- `--qwen-model Qwen/Qwen3-ASR-0.6B` picks the lighter model if VRAM is tight.
+- Translation is unaffected — it still runs through Google Translate afterwards.
+
+```bash
+# Japanese video -> best-quality Polish subtitles:
+ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl
+```
+
 ## 💡 Getting the best quality
 
 1. **Set the correct language** (`--source-lang`) — the #1 cause of bad subtitles is wrong language detection on dubbed content.
-2. **Use a bigger model** — `turbo` or `large-v3`.
-3. **Add `--prompt`** with character names / terminology (in the spoken language).
-4. **Use a GPU** to make big models practical.
+2. **Use Qwen3-ASR** (`--engine qwen`, or `hybrid` for Polish) — more accurate than Whisper.
+3. **Use a bigger model** — `turbo` or `large-v3` (Whisper), `Qwen3-ASR-1.7B` (Qwen, default).
+4. **Add `--prompt`** with character names / terminology (in the spoken language) — biases both engines.
+5. **Use a GPU** to make big models practical.
 
 ## 📄 Output
 

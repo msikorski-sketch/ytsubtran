@@ -70,6 +70,9 @@ LANGUAGE_NAMES = {
     'ja': 'Japanese', 'zh': 'Chinese', 'ko': 'Korean', 'ar': 'Arabic',
     'tr': 'Turkish', 'sv': 'Swedish', 'no': 'Norwegian', 'da': 'Danish',
     'fi': 'Finnish', 'hu': 'Hungarian', 'ro': 'Romanian', 'el': 'Greek',
+    'yue': 'Cantonese', 'id': 'Indonesian', 'th': 'Thai', 'vi': 'Vietnamese',
+    'hi': 'Hindi', 'ms': 'Malay', 'tl': 'Filipino', 'fa': 'Persian',
+    'mk': 'Macedonian',
 }
 
 
@@ -313,44 +316,58 @@ def embed_subtitles(video_file, srt_file, output_file, lang_code='und'):
     return None
 
 
-def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='pl',
-                                    translate_to=None, initial_prompt=None, output_dir=None,
-                                    also_vtt=False, burn=False, embed=False):
+def _import_qwen_engine():
     """
-    Generuje napisy używając Whisper, opcjonalnie z tłumaczeniem.
+    Importuje lokalny moduł qwen_engine (leży obok tego pliku) — także wtedy,
+    gdy skrypt uruchomiono przez zainstalowaną komendę konsolową.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import qwen_engine
+    return qwen_engine
+
+
+def generate_subtitles(video_file, model_size='base', source_lang='pl',
+                       translate_to=None, initial_prompt=None, output_dir=None,
+                       also_vtt=False, burn=False, embed=False,
+                       engine='auto', qwen_model=None):
+    """
+    Generuje napisy wybranym silnikiem ASR, opcjonalnie z tłumaczeniem.
 
     Parametry:
     - video_file: ścieżka do pliku wideo
     - model_size: nazwa modelu Whisper (tiny, base, small, medium, large,
                   large-v3, turbo... — dowolna obsługiwana przez whisper)
     - source_lang: język audio w nagraniu (np. 'pl', 'es', 'en') lub 'auto'
-                   do automatycznego wykrycia przez Whisper
+                   do automatycznego wykrycia
     - translate_to: docelowy język napisów (np. 'pl'). Jeśli None, napisy
                     pozostają w języku oryginału (sama transkrypcja).
-    - initial_prompt: podpowiedź kontekstowa dla Whisper (nazwy własne,
-                      terminologia) — poprawia dokładność i pisownię.
+    - initial_prompt: podpowiedź kontekstowa (nazwy własne, terminologia) —
+                      poprawia dokładność i pisownię (Whisper i Qwen).
     - output_dir: katalog na pliki napisów. Jeśli None, zapisuje obok pliku wideo.
     - also_vtt: dodatkowo zapisz napisy w formacie WebVTT (.vtt), nie tylko .srt.
     - burn: wtop napisy NA STAŁE w obraz (hardsub, ponowne kodowanie).
     - embed: osadź napisy jako miękką, przełączalną ścieżkę w MP4 (bez kodowania).
             Przy tłumaczeniu używana jest wersja przetłumaczona, inaczej oryginał.
+    - engine: silnik transkrypcji:
+        'auto'    — Qwen3-ASR, jeśli zainstalowany i jest GPU (wyższa jakość),
+                    w przeciwnym razie Whisper;
+        'whisper' — klasycznie, sam Whisper;
+        'qwen'    — Qwen3-ASR + timestampy ForcedAlignera (11 języków, m.in.
+                    japoński; dla pozostałych automatycznie tryb hybrydowy);
+        'hybrid'  — znaczniki czasu z Whispera + tekst z Qwena, z raportem
+                    zgodności obu silników (działa też dla polskiego).
+    - qwen_model: nazwa modelu Qwen3-ASR (domyślnie Qwen/Qwen3-ASR-1.7B).
     """
     print('\n' + '=' * 70)
-    print('🎙️  GENERATING SUBTITLES WITH WHISPER')
+    print('🎙️  GENERATING SUBTITLES')
     print('=' * 70)
 
-    # Check whether Whisper is installed
-    whisper_installed, version = check_whisper_installed()
-    if not whisper_installed:
-        show_whisper_installation_guide()
-        return False
-
-    print(f'✓ Whisper installed (version: {version})')
-
-    # Check whether ffmpeg is installed
+    # ffmpeg jest potrzebny każdemu silnikowi (dekodowanie audio)
     if not check_ffmpeg_installed():
         print('✗ ffmpeg is not installed!')
-        print('  Install ffmpeg so Whisper can process the audio.')
+        print('  Install ffmpeg so the audio can be processed.')
         return False
 
     print('✓ ffmpeg installed')
@@ -362,24 +379,119 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
             return False
         print('✓ deep-translator installed')
 
-    # Import Whisper
-    try:
-        import whisper
-    except ImportError:
-        show_whisper_installation_guide()
-        return False
-
     # Check whether the file exists
     if not os.path.exists(video_file):
         print(f'✗ File not found: {video_file}')
         return False
 
+    # Wybór trybu: Qwen3-ASR (najlepsza jakość), Whisper albo hybryda.
+    try:
+        qe = _import_qwen_engine()
+    except Exception:
+        qe = None  # brak modułu qwen_engine.py — zachowanie jak dotąd (Whisper)
+    if qe is not None:
+        qwen_ok, _qwen_ver = qe.check_qwen_installed()
+        mode, notes = qe.choose_asr_mode(engine, source_lang, qwen_ok, qe.cuda_available())
+    else:
+        mode, notes = 'whisper', []
+    for note in notes:
+        print(note)
+    if mode == 'install-qwen':
+        qe.show_qwen_installation_guide()
+        return False
+
+    engine_desc = {
+        'whisper': f'Whisper ({model_size})',
+        'qwen': 'Qwen3-ASR (ForcedAligner timestamps)',
+        'hybrid': f'hybrid — Whisper ({model_size}) timing + Qwen3-ASR text',
+    }
     print(f'\n📁 Video file: {video_file}')
-    print(f'🤖 Whisper model: {model_size}')
+    print(f'🧠 Engine: {engine_desc[mode]}')
     print(f'🌍 Audio language (transcription): {lang_name(source_lang)}')
     if translate_to and translate_to != source_lang:
         print(f'🔁 Translating subtitles to: {lang_name(translate_to)}')
+    if initial_prompt:
+        print(f'📝 Context prompt: "{initial_prompt}"')
     print()
+
+    if qe is not None and not qwen_model:
+        qwen_model = qe.DEFAULT_QWEN_MODEL
+
+    try:
+        transcription = None
+
+        if mode == 'qwen':
+            try:
+                transcription = qe.transcribe_qwen_full(video_file, source_lang,
+                                                        qwen_model, context=initial_prompt)
+            except qe.AlignerUnsupported as e:
+                print(f'ℹ️  The Qwen aligner cannot timestamp {lang_name(e.lang_code)} — '
+                      'switching to hybrid mode (Whisper timing + Qwen text).\n')
+                mode = 'hybrid'
+                source_lang = e.lang_code
+            except Exception as e:
+                print(f'⚠️  Qwen3-ASR failed: {e}')
+                print('   Falling back to Whisper.\n')
+                mode = 'whisper'
+
+        if mode in ('whisper', 'hybrid'):
+            transcription = _transcribe_with_whisper(video_file, model_size,
+                                                     source_lang, initial_prompt)
+            if transcription is None:
+                return False
+
+        segments, full_text, detected_lang = transcription
+
+        # Tryb hybrydowy: Qwen transkrybuje od nowa każdy segment Whispera
+        # (lepszy tekst na sprawdzonych znacznikach czasu) i raportuje zgodność
+        # obu silników. Błąd Qwena niczego nie psuje — zostaje wynik Whispera.
+        if mode == 'hybrid':
+            try:
+                texts, report = qe.refine_segments_with_qwen(
+                    video_file, segments, detected_lang, qwen_model,
+                    context=initial_prompt)
+                qe.print_refine_report(report)
+                for seg, text in zip(segments, texts):
+                    seg['text'] = text
+                joiner = '' if detected_lang in qe.CJK_LANGS else ' '
+                full_text = joiner.join(t.strip() for t in texts if t.strip())
+            except Exception as e:
+                print(f'⚠️  Qwen refinement failed ({e}) — keeping the Whisper text.\n')
+
+        return _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
+                                        translate_to, output_dir, also_vtt, burn, embed)
+
+    except Exception as e:
+        print(f'\n✗ Error while generating subtitles: {e}')
+        print('\nCheck that:')
+        print('- the video file is not corrupted')
+        print('- you have enough RAM/VRAM (at least 2 GB free)')
+        print('- ffmpeg is installed correctly')
+        return False
+
+
+def _transcribe_with_whisper(video_file, model_size, source_lang, initial_prompt):
+    """
+    Transkrypcja Whisperem: ładowanie modelu (z awaryjnym zejściem na CPU),
+    wykrycie języka (dla 'auto') i transkrypcja z parametrami ograniczającymi
+    halucynacje. Zwraca (segments, pełny_tekst, kod_języka) albo None przy błędzie.
+    """
+    # Check whether Whisper is installed
+    whisper_installed, version = check_whisper_installed()
+    if not whisper_installed:
+        show_whisper_installation_guide()
+        return None
+
+    print(f'✓ Whisper installed (version: {version})')
+
+    # Import Whisper
+    try:
+        import whisper
+    except ImportError:
+        show_whisper_installation_guide()
+        return None
+
+    print(f'🤖 Whisper model: {model_size}')
 
     # Model information
     model_info = {
@@ -393,9 +505,6 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
         'turbo': '~6 GB RAM, quality close to large-v3 but much faster',
     }
     print(f'ℹ️  {model_info.get(model_size, "custom/new model — using as provided")}\n')
-
-    if initial_prompt:
-        print(f'📝 Context prompt: "{initial_prompt}"\n')
 
     # Hint: small models struggle with music / many speakers
     if model_size in ('tiny', 'base'):
@@ -431,7 +540,7 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
                 print(f'✗ Could not load model "{model_size}": {e}')
                 print(f'  Models available in this whisper version: {available}')
                 print('  (For the newest models, update: pip install -U openai-whisper)')
-                return False
+                return None
         print('✓ Model loaded\n')
 
         # Language detection (when 'auto') — sampling several points so an intro
@@ -484,91 +593,95 @@ def generate_subtitles_with_whisper(video_file, model_size='base', source_lang='
         segments = result['segments']
 
         # Język oryginału (ustalony wcześniej: podany lub wykryty) — także źródło dla tłumaczenia
-        detected_lang = whisper_lang
-
-        # Gdzie zapisać napisy: w output_dir (jeśli podano) lub obok pliku wideo
-        if output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-            base_name = os.path.join(output_dir, os.path.splitext(os.path.basename(video_file))[0])
-        else:
-            base_name = os.path.splitext(video_file)[0]
-        created_files = []
-
-        # 1) Zapisz napisy w języku ORYGINAŁU
-        orig_code = detected_lang.upper()
-        srt_orig = f'{base_name}_{orig_code}.srt'
-        txt_orig = f'{base_name}_{orig_code}.txt'
-
-        print(f'\n💾 Saving subtitles (original): {srt_orig}')
-        write_srt(srt_orig, segments)
-        with open(txt_orig, 'w', encoding='utf-8') as f:
-            f.write(result['text'])
-        created_files.append(srt_orig)
-        created_files.append(txt_orig)
-        if also_vtt:
-            vtt_orig = f'{base_name}_{orig_code}.vtt'
-            write_vtt(vtt_orig, segments)
-            created_files.append(vtt_orig)
-
-        # „Główny" plik napisów do wtopienia/osadzenia (na razie: oryginał)
-        primary_srt = srt_orig
-        primary_code = orig_code
-
-        # 2) Jeśli trzeba — przetłumacz i zapisz wersję docelową
-        if translate_to and translate_to != detected_lang:
-            print(f'\n🔁 Translating {len(segments)} segments to {lang_name(translate_to)}...')
-            # We know the source language — pass it explicitly (more reliable than 'auto')
-            source_for_translate = detected_lang
-            original_texts = [s['text'] for s in segments]
-            translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
-
-            tgt_code = translate_to.upper()
-            srt_tgt = f'{base_name}_{tgt_code}.srt'
-            txt_tgt = f'{base_name}_{tgt_code}.txt'
-
-            print(f'\n💾 Saving subtitles (translation): {srt_tgt}')
-            write_srt(srt_tgt, segments, texts=translated_texts)
-            with open(txt_tgt, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(t.strip() for t in translated_texts))
-            created_files.append(srt_tgt)
-            created_files.append(txt_tgt)
-            if also_vtt:
-                vtt_tgt = f'{base_name}_{tgt_code}.vtt'
-                write_vtt(vtt_tgt, segments, texts=translated_texts)
-                created_files.append(vtt_tgt)
-
-            # Przy tłumaczeniu wtapiamy/osadzamy wersję przetłumaczoną
-            primary_srt = srt_tgt
-            primary_code = tgt_code
-
-        # 3) Opcjonalnie: wtop (hardsub) lub osadź (miękka ścieżka) napisy w wideo
-        if burn:
-            out = f'{base_name}_{primary_code}_hardsub.mp4'
-            if burn_subtitles(video_file, primary_srt, out):
-                created_files.append(out)
-        if embed:
-            out = f'{base_name}_{primary_code}_soft.mp4'
-            if embed_subtitles(video_file, primary_srt, out, primary_code.lower()):
-                created_files.append(out)
-
-        print('\n' + '=' * 70)
-        print('✓✓✓ SUBTITLES GENERATED SUCCESSFULLY ✓✓✓')
-        print('=' * 70)
-        print('\n📄 Created files:')
-        for path in created_files:
-            print(f'   • {path}')
-        print('\n💡 You can use the .srt files in video players (VLC, MPC-HC, etc.)')
-        print('=' * 70)
-
-        return True
+        return segments, result['text'], whisper_lang
 
     except Exception as e:
-        print(f'\n✗ Error while generating subtitles: {e}')
-        print('\nCheck that:')
-        print('- the video file is not corrupted')
-        print('- you have enough RAM (at least 2 GB free)')
-        print('- ffmpeg is installed correctly')
-        return False
+        print(f'\n✗ Whisper transcription failed: {e}')
+        return None
+
+
+def _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
+                             translate_to, output_dir, also_vtt, burn, embed):
+    """
+    Wspólny finał dla wszystkich silników ASR: zapis napisów w języku
+    oryginału, opcjonalne tłumaczenie segmentów (Google Translate), zapis
+    wersji przetłumaczonej oraz wtopienie/osadzenie napisów w wideo.
+    """
+    # Gdzie zapisać napisy: w output_dir (jeśli podano) lub obok pliku wideo
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        base_name = os.path.join(output_dir, os.path.splitext(os.path.basename(video_file))[0])
+    else:
+        base_name = os.path.splitext(video_file)[0]
+    created_files = []
+
+    # 1) Zapisz napisy w języku ORYGINAŁU
+    orig_code = detected_lang.upper()
+    srt_orig = f'{base_name}_{orig_code}.srt'
+    txt_orig = f'{base_name}_{orig_code}.txt'
+
+    print(f'\n💾 Saving subtitles (original): {srt_orig}')
+    write_srt(srt_orig, segments)
+    with open(txt_orig, 'w', encoding='utf-8') as f:
+        f.write(full_text)
+    created_files.append(srt_orig)
+    created_files.append(txt_orig)
+    if also_vtt:
+        vtt_orig = f'{base_name}_{orig_code}.vtt'
+        write_vtt(vtt_orig, segments)
+        created_files.append(vtt_orig)
+
+    # „Główny" plik napisów do wtopienia/osadzenia (na razie: oryginał)
+    primary_srt = srt_orig
+    primary_code = orig_code
+
+    # 2) Jeśli trzeba — przetłumacz i zapisz wersję docelową
+    if translate_to and translate_to != detected_lang:
+        print(f'\n🔁 Translating {len(segments)} segments to {lang_name(translate_to)}...')
+        # We know the source language — pass it explicitly (more reliable than 'auto')
+        source_for_translate = detected_lang
+        original_texts = [s['text'] for s in segments]
+        translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
+
+        tgt_code = translate_to.upper()
+        srt_tgt = f'{base_name}_{tgt_code}.srt'
+        txt_tgt = f'{base_name}_{tgt_code}.txt'
+
+        print(f'\n💾 Saving subtitles (translation): {srt_tgt}')
+        write_srt(srt_tgt, segments, texts=translated_texts)
+        with open(txt_tgt, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(t.strip() for t in translated_texts))
+        created_files.append(srt_tgt)
+        created_files.append(txt_tgt)
+        if also_vtt:
+            vtt_tgt = f'{base_name}_{tgt_code}.vtt'
+            write_vtt(vtt_tgt, segments, texts=translated_texts)
+            created_files.append(vtt_tgt)
+
+        # Przy tłumaczeniu wtapiamy/osadzamy wersję przetłumaczoną
+        primary_srt = srt_tgt
+        primary_code = tgt_code
+
+    # 3) Opcjonalnie: wtop (hardsub) lub osadź (miękka ścieżka) napisy w wideo
+    if burn:
+        out = f'{base_name}_{primary_code}_hardsub.mp4'
+        if burn_subtitles(video_file, primary_srt, out):
+            created_files.append(out)
+    if embed:
+        out = f'{base_name}_{primary_code}_soft.mp4'
+        if embed_subtitles(video_file, primary_srt, out, primary_code.lower()):
+            created_files.append(out)
+
+    print('\n' + '=' * 70)
+    print('✓✓✓ SUBTITLES GENERATED SUCCESSFULLY ✓✓✓')
+    print('=' * 70)
+    print('\n📄 Created files:')
+    for path in created_files:
+        print(f'   • {path}')
+    print('\n💡 You can use the .srt files in video players (VLC, MPC-HC, etc.)')
+    print('=' * 70)
+
+    return True
 
 
 def format_timestamp_srt(seconds):
@@ -1087,7 +1200,8 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
 def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_model='base',
                      source_lang='pl', translate_to=None, initial_prompt=None,
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
-                     burn=False, embed=False, inserts_opts=None, section_args=None):
+                     burn=False, embed=False, inserts_opts=None, section_args=None,
+                     engine='auto', qwen_model=None):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -1248,8 +1362,9 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
     # Subtitle generation (MP4 only)
     if generate_subs and format_choice == 'mp4':
         if final_path:
-            generate_subtitles_with_whisper(final_path, whisper_model, source_lang, translate_to,
-                                            initial_prompt, output_dir, also_vtt, burn, embed)
+            generate_subtitles(final_path, whisper_model, source_lang, translate_to,
+                               initial_prompt, output_dir, also_vtt, burn, embed,
+                               engine=engine, qwen_model=qwen_model)
         else:
             print('\n⚠️  Could not find the downloaded file to generate subtitles.')
     elif generate_subs and format_choice == 'mp3':
@@ -1300,6 +1415,12 @@ Examples:
   # Auto-detect the original language -> Polish subtitles:
   %(prog)s "https://youtube.com/watch?v=..." --subs --source-lang auto --translate-to pl
 
+  # Japanese video -> Polish subtitles, best quality (Qwen3-ASR):
+  %(prog)s "https://youtube.com/watch?v=..." --subs --engine qwen --source-lang ja --translate-to pl
+
+  # Polish video with a Whisper-vs-Qwen cross-check (hybrid engine):
+  %(prog)s "https://youtube.com/watch?v=..." --subs --engine hybrid --model medium
+
   # Local file on disk -> translated Polish subtitles (no download):
   %(prog)s --file "C:\\videos\\clip.mp4" --source-lang es --translate-to pl
 
@@ -1325,8 +1446,8 @@ Examples:
     parser.add_argument(
         '--subs',
         action='store_true',
-        help='Generate subtitles using Whisper AI (MP4 only). In the original '
-             'language by default; use --translate-to to translate.'
+        help='Generate subtitles with AI speech recognition (MP4 only; see --engine). '
+             'In the original language by default; use --translate-to to translate.'
     )
     parser.add_argument(
         '--model',
@@ -1334,7 +1455,27 @@ Examples:
         help='Whisper model (default: base). Any name supported by Whisper, '
              'e.g.: tiny, base, small, medium, large, large-v3, turbo. '
              'Bigger = more accurate but slower. Newer models work automatically '
-             'once they appear in the whisper library.'
+             'once they appear in the whisper library. '
+             'Used by --engine whisper and for the timing pass of --engine hybrid.'
+    )
+    parser.add_argument(
+        '--engine',
+        choices=['auto', 'whisper', 'qwen', 'hybrid'],
+        default='auto',
+        help='Transcription engine (default: auto). "qwen" = Qwen3-ASR — more accurate '
+             'than Whisper — with ForcedAligner timestamps (11 languages, incl. Japanese, '
+             'English, Spanish; NOT Polish); for the other Qwen languages it switches to '
+             '"hybrid" automatically. "hybrid" = Whisper timestamps + Qwen text, with an '
+             'agreement report (cross-check of both engines; works for Polish too). '
+             '"auto" prefers Qwen when qwen-asr is installed and a CUDA GPU is present, '
+             'otherwise Whisper. Qwen requires: pip install -U qwen-asr.'
+    )
+    parser.add_argument(
+        '--qwen-model',
+        default=None,
+        metavar='MODEL',
+        help='Qwen3-ASR model for --engine qwen/hybrid/auto '
+             '(default: Qwen/Qwen3-ASR-1.7B; lighter: Qwen/Qwen3-ASR-0.6B).'
     )
     parser.add_argument(
         '--source-lang',
@@ -1608,16 +1749,18 @@ Examples:
         # Generate subtitles unless the user asked ONLY for insert detection
         wants_subs = args.subs or bool(args.translate_to) or inserts_opts is None
         if wants_subs:
-            generate_subtitles_with_whisper(args.file, args.model, args.source_lang,
-                                            args.translate_to, args.prompt, args.output_dir,
-                                            args.vtt, args.burn, args.embed)
+            generate_subtitles(args.file, args.model, args.source_lang,
+                               args.translate_to, args.prompt, args.output_dir,
+                               args.vtt, args.burn, args.embed,
+                               engine=args.engine, qwen_model=args.qwen_model)
         if inserts_opts:
             process_inserts(args.file, url=None, output_dir=args.output_dir, **inserts_opts)
     else:  # args.url
         download_youtube(args.url, args.format, args.subs, args.model,
                          args.source_lang, args.translate_to, args.prompt,
                          args.cookies_from_browser, args.output_dir, args.vtt,
-                         args.burn, args.embed, inserts_opts, section_args)
+                         args.burn, args.embed, inserts_opts, section_args,
+                         engine=args.engine, qwen_model=args.qwen_model)
 
 
 if __name__ == '__main__':

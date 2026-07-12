@@ -94,13 +94,18 @@ And two Python libraries:
                                  │ media file path                │ media file path
                                  └───────────────┬────────────────┘
                                                  │
-                         generate_subtitles_with_whisper()
+                                  generate_subtitles()
                                                  │
                  ┌───────────────────────────────▼────────────────────────────┐
-                 │  pick_device()           → cuda or cpu                       │
-                 │  whisper.load_model()                                        │
-                 │  detect_language_robust()  (if --source-lang auto)           │
-                 │  model.transcribe()      → segments [{start,end,text}, …]    │
+                 │  choose_asr_mode()       → whisper | qwen | hybrid           │
+                 │                            (qwen_engine.py, --engine flag)   │
+                 │  whisper: pick_device() → whisper.load_model()               │
+                 │           detect_language_robust()  (if --source-lang auto)  │
+                 │           model.transcribe() → segments [{start,end,text},…] │
+                 │  qwen:    Qwen3-ASR + ForcedAligner → word timestamps        │
+                 │           group_align_items() → the same segment format      │
+                 │  hybrid:  Whisper segments, then Qwen re-transcribes each    │
+                 │           one (better text + agreement report)               │
                  │  write_srt()  + .txt     → original-language files           │
                  │  translate_texts()       → translated segments (optional)    │
                  │  write_srt()  + .txt     → translated files (optional)       │
@@ -109,8 +114,10 @@ And two Python libraries:
 
 The unit of data that flows through transcription and translation is the
 **segment**: a dict with a `start` time, an `end` time (both in seconds, as
-floats), and a `text` string. Whisper produces a list of these; everything
-downstream just transforms that list.
+floats), and a `text` string. Every engine produces a list of these (Whisper
+natively; Qwen3-ASR via `group_align_items()`, which groups the aligner's
+word-level timestamps into subtitle-sized lines); everything downstream just
+transforms that list.
 
 ---
 
@@ -333,6 +340,12 @@ This one behavior resolves the majority of real-world failures automatically.
 ---
 
 ## 6. Speech-to-text with Whisper
+
+> **Note (2026):** Whisper is now one of two supported engines. The optional
+> **Qwen3-ASR** engine (`--engine qwen`, module `qwen_engine.py`) is more accurate,
+> and the `hybrid` engine combines Whisper's timing with Qwen's text plus an
+> agreement report. Everything in this section still applies to `--engine whisper`
+> and to the timing pass of `hybrid`; the README documents the engine choice.
 
 ### 6.1 What Whisper is
 
