@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Gemini translation engine** (`--translate-engine gemini`, `--translate-model`):
+  translates the whole transcript in one context-aware LLM request instead of
+  segment-by-segment Google Translate — consistent terminology and natural grammar
+  across segments (biggest gain for ja/zh/ko sources). Long transcripts go in
+  batches of 300 segments with the previous batch's tail passed as consistency
+  context; a strict 1:1 JSON contract is validated and any failure (no SDK, no
+  key, bad response) falls back to Google Translate. Reuses the `--smart-inserts`/
+  `--organize` API-key handling. Google Translate remains the default.
 - **Qwen3-ASR engine** (`--engine qwen|hybrid|auto|whisper`, `--qwen-model`): optional
   higher-accuracy transcription with Alibaba's Qwen3-ASR-1.7B (`pip install qwen-asr`,
   CUDA GPU recommended). `qwen` uses ForcedAligner timestamps (11 languages, incl.

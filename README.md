@@ -74,6 +74,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Best-quality transcription (Qwen3-ASR) | `... --subs --engine qwen` |
 | Cross-check Whisper with Qwen (any language) | `... --subs --engine hybrid` |
 | Translate subtitles → Polish | `... --subs --source-lang es --translate-to pl` |
+| Context-aware LLM translation (Gemini) | `... --translate-to pl --translate-engine gemini` |
 | Auto-detect spoken language | `... --source-lang auto` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
 | Pick a Whisper model | `--model turbo` (or `large-v3`, `medium`, …) |
@@ -161,11 +162,21 @@ Notes:
   better text, and you get a Whisper-vs-Qwen agreement report (a built-in
   cross-check; strongly differing segments are listed with both versions).
 - `--qwen-model Qwen/Qwen3-ASR-0.6B` picks the lighter model if VRAM is tight.
-- Translation is unaffected — it still runs through Google Translate afterwards.
+
+## 🌐 Translation engines (`--translate-engine`)
+
+Subtitles are translated segment-by-segment through **Google Translate** by default
+(free, no key). For noticeably better quality add `--translate-engine gemini`: the
+whole transcript is sent to the **Gemini API** in one context-aware request, so
+terminology stays consistent and grammar flows across segment boundaries — the
+biggest win for Japanese/Chinese/Korean sources. It reuses the same API key as
+`--smart-inserts`/`--organize` (asks once, saves to `~/.ytsubtran.json`) and falls
+back to Google Translate automatically on any error. Pick the model with
+`--translate-model` (default: `gemini-2.5-flash`).
 
 ```bash
-# Japanese video -> best-quality Polish subtitles:
-ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl
+# Japanese video -> best-quality Polish subtitles (Qwen3-ASR + Gemini):
+ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
 ```
 
 ## 💡 Getting the best quality

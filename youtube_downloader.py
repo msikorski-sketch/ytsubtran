@@ -3,6 +3,7 @@ import re
 import subprocess
 import os
 import argparse
+import json
 import sys
 import shutil
 
@@ -121,6 +122,141 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
             if completed % 25 == 0 or completed == total:
                 print(f'   ...translated {completed}/{total} segments')
 
+    return translated
+
+
+def _gemini_translation_prompt(texts, source_name, target_name, prev_pairs=None):
+    """
+    Buduje prompt do tłumaczenia segmentów napisów przez Gemini.
+    Czysta funkcja (testowalna). `prev_pairs` to pary (oryginał, tłumaczenie)
+    z końca poprzedniej partii — utrzymują spójność terminologii między partiami.
+    """
+    lines = [
+        f'You are translating video subtitles from {source_name} to {target_name}.',
+        'Rules:',
+        '- Use the whole list as context (consistent terminology, natural grammar),',
+        '  but translate each segment on its own.',
+        f'- Return ONLY a JSON array of strings with exactly {len(texts)} items —',
+        '  one translation per input segment, in the same order.',
+        '- Never merge, split, reorder or drop segments.',
+        '- Keep proper names, numbers and units accurate. Use concise, natural',
+        '  subtitle phrasing.',
+        '- Translate every segment that contains words — including single words and',
+        '  short labels. Return a segment unchanged only when it contains no',
+        '  translatable speech at all (music/noise markers, stray syllables).',
+    ]
+    if prev_pairs:
+        lines.append('')
+        lines.append('For consistency, the last translations from the previous part were:')
+        for src, tgt in prev_pairs:
+            lines.append(f'- {json.dumps(src, ensure_ascii=False)} -> '
+                         f'{json.dumps(tgt, ensure_ascii=False)}')
+    lines.append('')
+    lines.append('Input segments (JSON):')
+    lines.append(json.dumps(texts, ensure_ascii=False))
+    return '\n'.join(lines)
+
+
+def parse_gemini_translation(raw, expected_n):
+    """
+    Parsuje odpowiedź Gemini na listę `expected_n` tłumaczeń.
+    Toleruje opakowanie w obiekt (np. {"translations": [...]}) i elementy
+    nie-tekstowe (koercja na str). Zwraca listę str albo None, gdy odpowiedź
+    nie daje się bezpiecznie dopasować 1:1 do wejścia.
+    """
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(data, dict):
+        # Model czasem opakowuje wynik w obiekt — przyjmij pierwszą wartość-listę
+        lists = [v for v in data.values() if isinstance(v, list)]
+        data = lists[0] if len(lists) == 1 else None
+    if not isinstance(data, list) or len(data) != expected_n:
+        return None
+    return [str(item).strip() if item is not None else '' for item in data]
+
+
+def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-flash',
+                           batch_size=300):
+    """
+    Tłumaczy segmenty napisów przez Gemini — cały transkrypt z kontekstem,
+    zamiast segment-po-segmencie jak Google Translate. Dłuższe materiały idą
+    w partiach po `batch_size` segmentów, z końcówką poprzedniej partii jako
+    kontekstem spójności.
+
+    Zwraca listę tłumaczeń (1:1 z wejściem; puste odpowiedzi zastępuje
+    oryginałem) albo None przy dowolnym problemie (brak SDK/klucza, błąd API,
+    niesparsowalna odpowiedź) — wywołujący spada wtedy na Google Translate.
+    """
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        print('   (google-genai SDK not installed — pip install -U google-genai)')
+        return None
+
+    # Klucz API obsługiwany tak samo jak w --smart-inserts / --organize
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import inserts
+    except Exception:
+        return None
+    key = inserts.get_gemini_key()
+    if not key:
+        print('   (no Gemini API key available)')
+        return None
+
+    source_name = lang_name(source_lang)
+    target_name = lang_name(target_lang)
+    client = genai.Client(api_key=key)
+
+    def translate_batch(batch, prev_pairs):
+        prompt = _gemini_translation_prompt(batch, source_name, target_name, prev_pairs)
+        resp = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type='application/json'),
+        )
+        return parse_gemini_translation(resp.text, len(batch))
+
+    total = len(texts)
+    batches = [texts[i:i + batch_size] for i in range(0, total, batch_size)]
+    translated = []
+    prev_pairs = None
+    retried_key = False
+    for bi, batch in enumerate(batches, 1):
+        try:
+            result = translate_batch(batch, prev_pairs)
+        except Exception as e:
+            # Nieważny/wygasły klucz: wyczyść i poproś o nowy (raz), jak w --organize
+            if not retried_key and inserts._looks_like_bad_key(e):
+                print('   Saved Gemini key is invalid/expired.')
+                inserts.clear_gemini_key()
+                key = inserts.get_gemini_key(force_prompt=True)
+                if not key:
+                    return None
+                client = genai.Client(api_key=key)
+                retried_key = True
+                try:
+                    result = translate_batch(batch, prev_pairs)
+                except Exception as e2:
+                    print(f'   Gemini request failed again: {e2}')
+                    return None
+            else:
+                print(f'   Gemini request failed: {e}')
+                return None
+        if result is None:
+            print('   Gemini returned a response that does not map 1:1 to the segments.')
+            return None
+        # Puste tłumaczenie -> zostaw oryginał (nie gubimy tekstu)
+        result = [t if t.strip() else src for t, src in zip(result, batch)]
+        translated.extend(result)
+        if len(batches) > 1:
+            print(f'   ...translated batch {bi}/{len(batches)} ({len(translated)}/{total} segments)')
+        prev_pairs = list(zip(batch[-3:], result[-3:]))
     return translated
 
 
@@ -331,7 +467,8 @@ def _import_qwen_engine():
 def generate_subtitles(video_file, model_size='base', source_lang='pl',
                        translate_to=None, initial_prompt=None, output_dir=None,
                        also_vtt=False, burn=False, embed=False,
-                       engine='auto', qwen_model=None):
+                       engine='auto', qwen_model=None,
+                       translate_engine='google', translate_model='gemini-2.5-flash'):
     """
     Generuje napisy wybranym silnikiem ASR, opcjonalnie z tłumaczeniem.
 
@@ -359,6 +496,10 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
         'hybrid'  — znaczniki czasu z Whispera + tekst z Qwena, z raportem
                     zgodności obu silników (działa też dla polskiego).
     - qwen_model: nazwa modelu Qwen3-ASR (domyślnie Qwen/Qwen3-ASR-1.7B).
+    - translate_engine: 'google' (deep-translator, darmowe, segment po segmencie)
+                        lub 'gemini' (cały transkrypt z kontekstem — lepsza
+                        spójność; wymaga klucza API; przy błędzie spada na Google).
+    - translate_model: model Gemini dla translate_engine='gemini'.
     """
     print('\n' + '=' * 70)
     print('🎙️  GENERATING SUBTITLES')
@@ -373,11 +514,16 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
     print('✓ ffmpeg installed')
 
     # If translating — verify the translation library before transcription starts
+    # (dla silnika 'gemini' deep-translator jest tylko awaryjnym zapasem)
     if translate_to and translate_to != source_lang:
-        if not check_translator_installed():
+        if check_translator_installed():
+            print('✓ deep-translator installed')
+        elif translate_engine == 'gemini':
+            print('⚠️  deep-translator is not installed — there will be no Google '
+                  'fallback if the Gemini translation fails.')
+        else:
             show_translator_installation_guide()
             return False
-        print('✓ deep-translator installed')
 
     # Check whether the file exists
     if not os.path.exists(video_file):
@@ -459,7 +605,8 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
                 print(f'⚠️  Qwen refinement failed ({e}) — keeping the Whisper text.\n')
 
         return _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
-                                        translate_to, output_dir, also_vtt, burn, embed)
+                                        translate_to, output_dir, also_vtt, burn, embed,
+                                        translate_engine, translate_model)
 
     except Exception as e:
         print(f'\n✗ Error while generating subtitles: {e}')
@@ -601,11 +748,13 @@ def _transcribe_with_whisper(video_file, model_size, source_lang, initial_prompt
 
 
 def _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
-                             translate_to, output_dir, also_vtt, burn, embed):
+                             translate_to, output_dir, also_vtt, burn, embed,
+                             translate_engine='google', translate_model='gemini-2.5-flash'):
     """
     Wspólny finał dla wszystkich silników ASR: zapis napisów w języku
-    oryginału, opcjonalne tłumaczenie segmentów (Google Translate), zapis
-    wersji przetłumaczonej oraz wtopienie/osadzenie napisów w wideo.
+    oryginału, opcjonalne tłumaczenie segmentów (Gemini z pełnym kontekstem
+    lub Google Translate), zapis wersji przetłumaczonej oraz wtopienie/
+    osadzenie napisów w wideo.
     """
     # Gdzie zapisać napisy: w output_dir (jeśli podano) lub obok pliku wideo
     if output_dir:
@@ -641,7 +790,16 @@ def _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
         # We know the source language — pass it explicitly (more reliable than 'auto')
         source_for_translate = detected_lang
         original_texts = [s['text'] for s in segments]
-        translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
+
+        translated_texts = None
+        if translate_engine == 'gemini':
+            print(f'   Translator: Gemini ({translate_model}) — full-context translation')
+            translated_texts = translate_texts_gemini(original_texts, translate_to,
+                                                      source_for_translate, translate_model)
+            if translated_texts is None:
+                print('⚠️  Gemini translation failed — falling back to Google Translate.')
+        if translated_texts is None:
+            translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
 
         tgt_code = translate_to.upper()
         srt_tgt = f'{base_name}_{tgt_code}.srt'
@@ -1201,7 +1359,8 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      source_lang='pl', translate_to=None, initial_prompt=None,
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
                      burn=False, embed=False, inserts_opts=None, section_args=None,
-                     engine='auto', qwen_model=None):
+                     engine='auto', qwen_model=None,
+                     translate_engine='google', translate_model='gemini-2.5-flash'):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -1364,7 +1523,9 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         if final_path:
             generate_subtitles(final_path, whisper_model, source_lang, translate_to,
                                initial_prompt, output_dir, also_vtt, burn, embed,
-                               engine=engine, qwen_model=qwen_model)
+                               engine=engine, qwen_model=qwen_model,
+                               translate_engine=translate_engine,
+                               translate_model=translate_model)
         else:
             print('\n⚠️  Could not find the downloaded file to generate subtitles.')
     elif generate_subs and format_choice == 'mp3':
@@ -1415,8 +1576,8 @@ Examples:
   # Auto-detect the original language -> Polish subtitles:
   %(prog)s "https://youtube.com/watch?v=..." --subs --source-lang auto --translate-to pl
 
-  # Japanese video -> Polish subtitles, best quality (Qwen3-ASR):
-  %(prog)s "https://youtube.com/watch?v=..." --subs --engine qwen --source-lang ja --translate-to pl
+  # Japanese video -> Polish subtitles, best quality (Qwen3-ASR + Gemini translation):
+  %(prog)s "https://youtube.com/watch?v=..." --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
 
   # Polish video with a Whisper-vs-Qwen cross-check (hybrid engine):
   %(prog)s "https://youtube.com/watch?v=..." --subs --engine hybrid --model medium
@@ -1486,8 +1647,25 @@ Examples:
     parser.add_argument(
         '--translate-to',
         default=None,
-        help='Target subtitle language, e.g. pl. Enables translation (Google Translate). '
-             'Without it, subtitles stay in the original language.'
+        help='Target subtitle language, e.g. pl. Enables translation (see '
+             '--translate-engine). Without it, subtitles stay in the original language.'
+    )
+    parser.add_argument(
+        '--translate-engine',
+        choices=['google', 'gemini'],
+        default='google',
+        help='How to translate subtitles (default: google). "google" = free Google '
+             'Translate, segment by segment. "gemini" = the Gemini API translates the '
+             'whole transcript with context — consistent terminology and better grammar '
+             '(recommended for ja/zh/ko sources). Uses the same API key as '
+             '--smart-inserts/--organize (asks once and saves it); falls back to '
+             'Google Translate on any error.'
+    )
+    parser.add_argument(
+        '--translate-model',
+        default='gemini-2.5-flash',
+        metavar='MODEL',
+        help='Gemini model for --translate-engine gemini (default: gemini-2.5-flash).'
     )
     parser.add_argument(
         '--prompt',
@@ -1752,7 +1930,9 @@ Examples:
             generate_subtitles(args.file, args.model, args.source_lang,
                                args.translate_to, args.prompt, args.output_dir,
                                args.vtt, args.burn, args.embed,
-                               engine=args.engine, qwen_model=args.qwen_model)
+                               engine=args.engine, qwen_model=args.qwen_model,
+                               translate_engine=args.translate_engine,
+                               translate_model=args.translate_model)
         if inserts_opts:
             process_inserts(args.file, url=None, output_dir=args.output_dir, **inserts_opts)
     else:  # args.url
@@ -1760,7 +1940,9 @@ Examples:
                          args.source_lang, args.translate_to, args.prompt,
                          args.cookies_from_browser, args.output_dir, args.vtt,
                          args.burn, args.embed, inserts_opts, section_args,
-                         engine=args.engine, qwen_model=args.qwen_model)
+                         engine=args.engine, qwen_model=args.qwen_model,
+                         translate_engine=args.translate_engine,
+                         translate_model=args.translate_model)
 
 
 if __name__ == '__main__':

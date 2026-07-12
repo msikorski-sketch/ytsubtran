@@ -362,3 +362,49 @@ def test_organize_frame_times_generalizes_to_any_n():
     # unknown duration still returns exactly n distinct points
     assert len(organize._frame_times(0.0, 10)) == 10
 
+
+
+# ---------------------------------------------------------------------------
+# Gemini translation — prompt building and response parsing (pure helpers)
+# ---------------------------------------------------------------------------
+
+def test_gemini_prompt_states_count_langs_and_payload():
+    prompt = yt._gemini_translation_prompt(['a', 'b'], 'Japanese', 'Polish')
+    assert 'exactly 2 items' in prompt
+    assert 'from Japanese to Polish' in prompt
+    assert '["a", "b"]' in prompt
+
+
+def test_gemini_prompt_includes_consistency_pairs():
+    prompt = yt._gemini_translation_prompt(['x'], 'English', 'Polish',
+                                           prev_pairs=[('hello', 'cześć')])
+    assert '"hello" -> "cześć"' in prompt
+
+
+def test_parse_gemini_translation_plain_list():
+    assert yt.parse_gemini_translation('["ala", "ma kota"]', 2) == ['ala', 'ma kota']
+
+
+def test_parse_gemini_translation_accepts_single_wrapper_object():
+    raw = '{"translations": ["jeden", "dwa"]}'
+    assert yt.parse_gemini_translation(raw, 2) == ['jeden', 'dwa']
+
+
+def test_parse_gemini_translation_rejects_wrong_count():
+    assert yt.parse_gemini_translation('["tylko jeden"]', 2) is None
+
+
+def test_parse_gemini_translation_rejects_invalid_json_and_non_list():
+    assert yt.parse_gemini_translation('not json at all', 1) is None
+    assert yt.parse_gemini_translation('"just a string"', 1) is None
+    assert yt.parse_gemini_translation(None, 1) is None
+
+
+def test_parse_gemini_translation_rejects_ambiguous_wrapper():
+    # Two candidate lists -> cannot decide safely, must give up (fallback path)
+    raw = '{"a": ["x"], "b": ["y"]}'
+    assert yt.parse_gemini_translation(raw, 1) is None
+
+
+def test_parse_gemini_translation_coerces_and_strips():
+    assert yt.parse_gemini_translation('[1, "  spacja  ", null]', 3) == ['1', 'spacja', '']
