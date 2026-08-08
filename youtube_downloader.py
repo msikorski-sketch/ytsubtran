@@ -1619,13 +1619,296 @@ def process_inserts(video_file, url=None, output_dir=None, do_cut=False, use_ai=
         print('✗ Cutting failed (see ffmpeg output above).')
 
 
+# ---------------------------------------------------------------------------
+# Duplicate detection — never download the same video twice
+# ---------------------------------------------------------------------------
+
+# Indeks pobrań leży W KATALOGU DOCELOWYM, więc "już pobrane" znaczy zawsze
+# "jest w tym folderze" — folder pozostaje samowystarczalny (można go przenieść
+# razem z historią pobrań).
+DOWNLOAD_INDEX_NAME = '.ytsubtran_downloads.json'
+# Archiwum yt-dlp (jego własny mechanizm) — używane tylko w trybie playlisty,
+# gdzie pomijanie musi działać per pozycja listy, wewnątrz jednego wywołania.
+DOWNLOAD_ARCHIVE_NAME = '.ytsubtran_archive.txt'
+
+
+def video_id_from_url(url):
+    """11-znakowy identyfikator filmu YouTube z adresu, albo None."""
+    match = re.search(r'[?&]v=([0-9A-Za-z_-]{11})', url or '')
+    return match.group(1) if match else None
+
+
+def section_signature(section_args):
+    """
+    Podpis zakresu pobrania: 'full' dla całego filmu albo np. '10.000-25.000'.
+    Fragment NIE jest duplikatem całego filmu (ani innego fragmentu).
+    """
+    for i, arg in enumerate(section_args or []):
+        if arg == '--download-sections' and i + 1 < len(section_args):
+            return str(section_args[i + 1]).lstrip('*')
+    return 'full'
+
+
+def download_key(video_id, format_choice, section_args=None):
+    """
+    Klucz duplikatu: ten sam film + ten sam format + ten sam zakres.
+    Czysta funkcja (testowalna).
+    """
+    return f'{video_id}|{format_choice}|{section_signature(section_args)}'
+
+
+def fragment_suffix(section_args):
+    """
+    Dopisek do nazwy pliku dla pobrania fragmentu, np. ' [5-12s]'. Pusty dla
+    całego filmu. Dzięki temu dwa różne fragmenty tego samego filmu NIE trafiają
+    na tę samą nazwę — yt-dlp pominąłby wtedy drugi jako „już pobrany", a plik
+    zawierałby inny materiał, niż mówi indeks. Czysta funkcja.
+    """
+    signature = section_signature(section_args)
+    if signature == 'full':
+        return ''
+
+    def trim(value):
+        try:
+            number = float(value)
+        except ValueError:
+            return value
+        return str(int(number)) if number == int(number) else f'{number:g}'
+
+    start, _, end = signature.partition('-')
+    end = 'end' if end in ('inf', '') else trim(end)
+    return f' [{trim(start)}-{end}s]'
+
+
+def download_index_path(output_dir):
+    return os.path.join(output_dir, DOWNLOAD_INDEX_NAME)
+
+
+def load_download_index(output_dir):
+    """Czyta indeks pobrań z katalogu docelowego. {} przy braku/uszkodzeniu."""
+    try:
+        with open(download_index_path(output_dir), encoding='utf-8') as f:
+            data = json.load(f) or {}
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_download_index(output_dir, index):
+    """Zapisuje indeks pobrań. Zwraca True/False (brak zapisu nie jest błędem krytycznym)."""
+    try:
+        with open(download_index_path(output_dir), 'w', encoding='utf-8') as f:
+            json.dump(index, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError:
+        return False
+
+
+def verify_download_entry(entry, output_dir, exists=os.path.exists, size_of=os.path.getsize):
+    """
+    Sprawdza, czy zapisane pobranie NAPRAWDĘ jest na dysku i jest kompletne.
+    Czysta logika (I/O wstrzykiwane, więc testowalna bez plików).
+
+    Zwraca (status, ścieżka):
+      'ok'         — plik istnieje i ma dokładnie zapisany rozmiar → duplikat,
+      'missing'    — wpis jest, pliku nie ma (skasowany/przeniesiony) → pobierz ponownie,
+      'incomplete' — plik pusty albo obok leży niedokończony .part → pobierz ponownie,
+      'modified'   — plik istnieje, ale rozmiar się nie zgadza (np. późniejszy
+                     remux/--resolve) → wywołujący potwierdza go ffprobe'em.
+    """
+    name = (entry or {}).get('file')
+    if not name:
+        return 'missing', None
+    path = name if os.path.isabs(name) else os.path.join(output_dir, name)
+    if not exists(path):
+        return 'missing', path
+    if exists(path + '.part'):
+        return 'incomplete', path
+    try:
+        actual = size_of(path)
+    except OSError:
+        return 'missing', path
+    if actual <= 0:
+        return 'incomplete', path
+    recorded = entry.get('size')
+    if isinstance(recorded, int) and recorded > 0 and actual != recorded:
+        return 'modified', path
+    return 'ok', path
+
+
+def _human_size(num_bytes):
+    """Rozmiar pliku w czytelnej postaci (np. '1.2 GB')."""
+    size = float(num_bytes or 0)
+    for unit in ('B', 'KB', 'MB', 'GB'):
+        if size < 1024 or unit == 'GB':
+            return f'{size:.1f} {unit}' if unit != 'B' else f'{int(size)} B'
+        size /= 1024
+
+
+def record_download(output_dir, key, video_id, url, path, format_choice, section_args):
+    """Zapisuje ukończone pobranie w indeksie katalogu docelowego."""
+    from datetime import datetime
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return False
+    index = load_download_index(output_dir)
+    index[key] = {
+        'video_id': video_id,
+        'url': url,
+        # Ścieżka względna, dopóki plik leży w katalogu docelowym — dzięki temu
+        # przeniesienie całego folderu nie unieważnia indeksu.
+        'file': os.path.basename(path) if os.path.dirname(os.path.abspath(path))
+        == os.path.abspath(output_dir) else path,
+        'size': size,
+        'format': format_choice,
+        'section': section_signature(section_args),
+        'downloaded_at': datetime.now().isoformat(timespec='seconds'),
+    }
+    return save_download_index(output_dir, index)
+
+
+def expected_media_duration(video_duration, section_args=None):
+    """
+    Ile sekund powinien mieć pobrany plik: cały film albo długość fragmentu.
+    Czysta funkcja; 0.0 gdy nie da się tego ustalić.
+    """
+    signature = section_signature(section_args)
+    if signature == 'full':
+        return float(video_duration or 0.0)
+    start, _, end = signature.partition('-')
+    try:
+        start = float(start)
+        if end in ('inf', ''):
+            return max(0.0, float(video_duration or 0.0) - start) if video_duration else 0.0
+        return max(0.0, float(end) - start)
+    except ValueError:
+        return 0.0
+
+
+def probe_video_duration(url, cookies_from_browser=None):
+    """Długość filmu wg YouTube (sekundy) — bez pobierania. 0.0 przy błędzie."""
+    command = [sys.executable, '-m', 'yt_dlp', '--skip-download', '--no-warnings',
+               '--print', '%(duration)s', '--no-playlist']
+    if cookies_from_browser:
+        command.extend(['--cookies-from-browser', cookies_from_browser])
+    command.append(url)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace', timeout=120)
+        return float((result.stdout or '').strip().splitlines()[-1])
+    except Exception:
+        return 0.0
+
+
+def durations_match(actual, expected, fragment=False, keyframe_slack=15.0):
+    """
+    Czy plik o długości `actual` odpowiada oczekiwanym `expected` sekundom?
+    Czysta funkcja; None, gdy którakolwiek długość jest nieznana.
+
+    Fragmenty pobierane bez --precise-cut zaczynają się od najbliższej klatki
+    kluczowej, więc bywają o kilka sekund DŁUŻSZE od żądanego zakresu — stąd
+    osobna, luźniejsza tolerancja (wciąż wyłapuje zupełnie inny materiał).
+    """
+    if actual <= 0 or expected <= 0:
+        return None
+    if fragment:
+        return -1.0 <= (actual - expected) <= keyframe_slack
+    return abs(actual - expected) <= max(2.0, expected * 0.02)
+
+
+def existing_file_matches_video(path, url, section_args=None, cookies_from_browser=None):
+    """
+    Czy plik, który już leżał w katalogu (yt-dlp pominął pobranie, bo nazwa się
+    zgadzała), to NA PEWNO ten film? Porównuje długość pliku z długością
+    zgłaszaną przez YouTube. Zwraca True / False / None (nie dało się ustalić).
+    """
+    expected = expected_media_duration(probe_video_duration(url, cookies_from_browser),
+                                       section_args)
+    if expected <= 0:
+        return None
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import inserts
+        actual = inserts.ffprobe_duration(path)
+    except Exception:
+        return None
+    return durations_match(actual, expected,
+                           fragment=section_signature(section_args) != 'full')
+
+
+def check_already_downloaded(url, output_dir, format_choice, section_args=None):
+    """
+    Czy ten film (w tym formacie i zakresie) jest już pobrany w tym katalogu?
+
+    Dopasowanie po IDENTYFIKATORZE filmu z YouTube — nie po nazwie pliku, bo
+    tytuły bywają zmieniane. Zwraca (ścieżka_istniejącego_pliku | None, klucz).
+    Wypisuje powód pominięcia albo powód ponownego pobrania.
+    """
+    video_id = video_id_from_url(url)
+    if not video_id:
+        return None, None  # nie umiemy wskazać filmu — nie ryzykujemy pominięcia
+
+    key = download_key(video_id, format_choice, section_args)
+    entry = load_download_index(output_dir).get(key)
+    if not entry:
+        return None, key
+
+    status, path = verify_download_entry(entry, output_dir)
+
+    if status == 'modified':
+        # Plik żyje, ale ma inny rozmiar niż w chwili pobrania (typowo: późniejszy
+        # remux / --resolve). Potwierdzamy ffprobe'em, że jest sprawny.
+        duration = 0.0
+        try:
+            here = os.path.dirname(os.path.abspath(__file__))
+            if here not in sys.path:
+                sys.path.insert(0, here)
+            import inserts
+            duration = inserts.ffprobe_duration(path)
+        except Exception:
+            duration = 0.0
+        if duration > 0:
+            status = 'ok'
+        else:
+            print(f'\n♻️  Recorded as downloaded, but the file cannot be read '
+                  f'({path}) — downloading it again.')
+            return None, key
+
+    if status == 'missing':
+        print(f'\n♻️  This video was downloaded before, but the file is no longer there '
+              f'({path}) — downloading it again.')
+        return None, key
+    if status == 'incomplete':
+        print(f'\n♻️  A previous download of this video is incomplete '
+              f'({path}) — downloading it again.')
+        return None, key
+
+    section = entry.get('section', 'full')
+    print('\n' + '=' * 70)
+    print('⏭️  ALREADY DOWNLOADED — skipping the download')
+    print('=' * 70)
+    print(f'Video id:   {video_id}  (matched by YouTube id, not by file name)')
+    print(f'File:       {path}')
+    print(f'Size:       {_human_size(entry.get("size"))}')
+    if entry.get('downloaded_at'):
+        print(f'Downloaded: {entry["downloaded_at"].replace("T", " ")}')
+    print(f'Match:      same video + same format ({entry.get("format", format_choice)}) '
+          f'+ same range ({"whole video" if section == "full" else section + " s"})')
+    print('\nUse --force-download to download it again anyway.')
+    print('=' * 70)
+    return path, key
+
+
 def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_model='base',
                      source_lang='pl', translate_to=None, initial_prompt=None,
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
                      burn=False, embed=False, inserts_opts=None, section_args=None,
                      engine='auto', qwen_model=None,
                      translate_engine='google', translate_model='gemini-2.5-flash',
-                     resolve=False):
+                     resolve=False, force_download=False):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -1635,7 +1918,10 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         os.makedirs(output_dir, exist_ok=True)
     else:
         output_dir = os.getcwd()
-    output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
+    # Fragmenty dostają zakres w nazwie — inaczej drugi fragment tego samego
+    # filmu trafiłby na istniejącą nazwę i yt-dlp pominąłby pobranie.
+    output_template = os.path.join(
+        output_dir, f'%(title)s{fragment_suffix(section_args)}.%(ext)s')
 
     # Czysty link playlisty: yt-dlp pobierze WSZYSTKIE pozycje (--no-playlist
     # chroni tylko linki do pojedynczego filmu z doklejonym &list=...).
@@ -1660,6 +1946,35 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         if translate_to and translate_to != source_lang:
             print(f'  Translating to: {lang_name(translate_to)}')
     print('\n' + '=' * 60)
+
+    # Wykrywanie duplikatów: ten sam film (po ID z YouTube), format i zakres.
+    # Pomijamy TYLKO wtedy, gdy plik naprawdę leży na dysku i jest kompletny.
+    video_id = video_id_from_url(url)
+    dup_key = download_key(video_id, format_choice, section_args) if video_id else None
+    if dup_key and not playlist_mode:
+        if force_download:
+            print('🔁 --force-download: duplicate check skipped, downloading again.')
+        else:
+            existing_path, _ = check_already_downloaded(url, output_dir, format_choice,
+                                                        section_args)
+            if existing_path:
+                # Plik już jest — pomijamy pobieranie, ale dalsze kroki (napisy,
+                # preset DaVinci, inserty) wykonujemy na istniejącym pliku.
+                final_path = _post_process_download(
+                    existing_path, url=url, output_dir=output_dir,
+                    format_choice=format_choice, resolve=resolve,
+                    generate_subs=generate_subs, whisper_model=whisper_model,
+                    source_lang=source_lang, translate_to=translate_to,
+                    initial_prompt=initial_prompt, also_vtt=also_vtt, burn=burn,
+                    embed=embed, engine=engine, qwen_model=qwen_model,
+                    translate_engine=translate_engine, translate_model=translate_model,
+                    inserts_opts=inserts_opts,
+                )
+                # Normalizacja (--resolve) mogła zmienić plik/rozmiar — odśwież wpis.
+                if final_path:
+                    record_download(output_dir, dup_key, video_id, url, final_path,
+                                    format_choice, section_args)
+                return
 
     # Early warning about missing ffmpeg — it's needed to merge formats (best
     # quality) and for subtitles. We don't abort: formats 18/22 and MP3 can work
@@ -1736,6 +2051,26 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         print('Unsupported format.')
         return
 
+    # --force-download: yt-dlp samo pomija pliki o istniejącej nazwie, więc żeby
+    # wymuszenie faktycznie coś zrobiło, każemy mu nadpisać plik.
+    if force_download:
+        strategies = [
+            (spec, name, list(extra or []) + ['--force-overwrites'])
+            for spec, name, extra in strategies
+        ]
+
+    # Tryb playlisty: pomijanie już pobranych pozycji musi działać per film
+    # wewnątrz jednego wywołania, więc korzystamy z własnego mechanizmu yt-dlp
+    # (archiwum identyfikatorów w katalogu docelowym).
+    if playlist_mode and not force_download:
+        archive = os.path.join(output_dir, DOWNLOAD_ARCHIVE_NAME)
+        strategies = [
+            (spec, name, list(extra or []) + ['--download-archive', archive])
+            for spec, name, extra in strategies
+        ]
+        print(f'\n🗂️  Playlist duplicate check: items listed in {archive} are skipped.')
+        print('   (--force-download ignores the archive and re-downloads everything)')
+
     # Fragment download (--start/--end): append --download-sections to every
     # strategy's extra args so the fallback chain still works.
     if section_args:
@@ -1808,6 +2143,50 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         final_path = downloaded_file if os.path.isabs(downloaded_file) \
             else os.path.join(output_dir, downloaded_file)
 
+    final_path = _post_process_download(
+        final_path, url=url, output_dir=output_dir, format_choice=format_choice,
+        resolve=resolve, generate_subs=generate_subs, whisper_model=whisper_model,
+        source_lang=source_lang, translate_to=translate_to, initial_prompt=initial_prompt,
+        also_vtt=also_vtt, burn=burn, embed=embed, engine=engine, qwen_model=qwen_model,
+        translate_engine=translate_engine, translate_model=translate_model,
+        inserts_opts=inserts_opts,
+    )
+
+    # Zapisz pobranie w indeksie katalogu (po wszystkich krokach, żeby zapamiętany
+    # rozmiar odpowiadał plikowi, który faktycznie został na dysku).
+    if final_path and dup_key:
+        # yt-dlp mogło pominąć pobieranie, bo plik o TAKIEJ NAZWIE już tam był
+        # (np. z wcześniejszej wersji skryptu albo z innego narzędzia). Wtedy nie
+        # wolno bezrefleksyjnie zapisać go jako „ten film" — najpierw sprawdzamy
+        # długością, czy to na pewno ten materiał.
+        if 'has already been downloaded' in (output or '').lower():
+            print('\nℹ️  A file with this name was already in the folder — yt-dlp did not '
+                  're-download it.')
+            print('   Verifying that it really is this video (comparing durations)...')
+            verdict = existing_file_matches_video(final_path, url, section_args,
+                                                  cookies_from_browser)
+            if verdict is True:
+                print('   ✓ Length matches — recorded as this video.')
+            else:
+                print('   ⚠️  Could not confirm it is this video'
+                      + (' (the length does NOT match).' if verdict is False else '.'))
+                print('   Not recording it, so nothing is skipped by mistake next time.')
+                print('   Use --force-download (or a different --output-dir) to fetch a '
+                      'fresh copy.')
+                return
+        record_download(output_dir, dup_key, video_id_from_url(url), url,
+                        final_path, format_choice, section_args)
+
+
+def _post_process_download(final_path, url, output_dir, format_choice, resolve,
+                           generate_subs, whisper_model, source_lang, translate_to,
+                           initial_prompt, also_vtt, burn, embed, engine, qwen_model,
+                           translate_engine, translate_model, inserts_opts):
+    """
+    Kroki po pobraniu, wspólne dla świeżo pobranego pliku i dla pliku, który już
+    był na dysku (wykryty duplikat): remux/preset DaVinci, napisy, inserty.
+    Zwraca finalną ścieżkę pliku (może się zmienić przy normalizacji --resolve).
+    """
     # Make every MP4 we hand off downstream readable by DaVinci Resolve (free):
     # stream-copy remux that drops edit lists, fixes negative timestamps and
     # moves the moov atom to the front. Especially important for fragment
@@ -1839,6 +2218,8 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
             process_inserts(final_path, url=url, output_dir=output_dir, **inserts_opts)
         else:
             print('\n⚠️  Could not find the downloaded file for insert detection.')
+
+    return final_path
 
 
 # Wspólny plik ustawień narzędzia (dzielony z kluczem Gemini z inserts.py)
@@ -2055,6 +2436,15 @@ Examples:
         metavar='DIR',
         help='Folder for output files (video and/or subtitles). If omitted, the script '
              'asks interactively (Enter = current directory).'
+    )
+    parser.add_argument(
+        '--force-download',
+        action='store_true',
+        help='Download even if this video is already in the output folder. By default '
+             'the script skips videos it has downloaded there before — matched by '
+             'YouTube video id (not file name), and only when the file is really on '
+             'disk and complete. Format (mp4/mp3) and --start/--end range are part of '
+             'the match, so a fragment is never mistaken for the full video.'
     )
     parser.add_argument(
         '--resolve',
@@ -2350,7 +2740,7 @@ Examples:
                          engine=args.engine, qwen_model=args.qwen_model,
                          translate_engine=args.translate_engine,
                          translate_model=args.translate_model,
-                         resolve=args.resolve)
+                         resolve=args.resolve, force_download=args.force_download)
 
 
 if __name__ == '__main__':

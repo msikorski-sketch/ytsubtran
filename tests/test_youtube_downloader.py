@@ -569,3 +569,181 @@ def test_read_printed_paths(tmp_path):
 
 def test_read_printed_paths_missing_file():
     assert yt._read_printed_paths('Z:/definitely/not/there.txt') == []
+
+
+# ---------------------------------------------------------------------------
+# Duplicate detection — "already downloaded, skip it"
+# ---------------------------------------------------------------------------
+
+def test_video_id_from_url():
+    assert yt.video_id_from_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert yt.video_id_from_url("https://youtube.com/watch?v=dQw4w9WgXcQ&t=5") == "dQw4w9WgXcQ"
+    assert yt.video_id_from_url("https://example.com/whatever") is None
+    assert yt.video_id_from_url(None) is None
+
+
+def test_section_signature():
+    assert yt.section_signature(None) == 'full'
+    assert yt.section_signature([]) == 'full'
+    assert yt.section_signature(['--download-sections', '*10.000-25.000']) == '10.000-25.000'
+    # flag present but no value -> still 'full', never crashes
+    assert yt.section_signature(['--download-sections']) == 'full'
+
+
+def test_download_key_separates_format_and_range():
+    full_mp4 = yt.download_key('abc12345678', 'mp4')
+    frag_mp4 = yt.download_key('abc12345678', 'mp4', ['--download-sections', '*0-10.000'])
+    full_mp3 = yt.download_key('abc12345678', 'mp3')
+    # A fragment is NOT a duplicate of the full video, mp3 is not a duplicate of mp4
+    assert len({full_mp4, frag_mp4, full_mp3}) == 3
+    # ...but the same request maps to the same key
+    assert yt.download_key('abc12345678', 'mp4') == full_mp4
+
+
+def test_verify_entry_ok_when_size_matches():
+    entry = {'file': 'clip.mp4', 'size': 100}
+    status, path = yt.verify_download_entry(
+        entry, 'D:/out', exists=lambda p: not p.endswith('.part'), size_of=lambda p: 100)
+    assert status == 'ok'
+    assert path.endswith('clip.mp4')
+
+
+def test_verify_entry_missing_file_forces_redownload():
+    entry = {'file': 'clip.mp4', 'size': 100}
+    status, _ = yt.verify_download_entry(
+        entry, 'D:/out', exists=lambda p: False, size_of=lambda p: 100)
+    assert status == 'missing'
+
+
+def test_verify_entry_detects_partial_download():
+    entry = {'file': 'clip.mp4', 'size': 100}
+    # a leftover clip.mp4.part means the previous download never finished
+    status, _ = yt.verify_download_entry(
+        entry, 'D:/out', exists=lambda p: True, size_of=lambda p: 100)
+    assert status == 'incomplete'
+
+
+def test_verify_entry_zero_byte_file_is_incomplete():
+    entry = {'file': 'clip.mp4', 'size': 100}
+    status, _ = yt.verify_download_entry(
+        entry, 'D:/out', exists=lambda p: not p.endswith('.part'), size_of=lambda p: 0)
+    assert status == 'incomplete'
+
+
+def test_verify_entry_size_mismatch_is_modified():
+    # e.g. the file was remuxed/normalized later — caller re-checks with ffprobe
+    entry = {'file': 'clip.mp4', 'size': 100}
+    status, _ = yt.verify_download_entry(
+        entry, 'D:/out', exists=lambda p: not p.endswith('.part'), size_of=lambda p: 250)
+    assert status == 'modified'
+
+
+def test_verify_entry_without_file_name():
+    assert yt.verify_download_entry({}, 'D:/out')[0] == 'missing'
+    assert yt.verify_download_entry(None, 'D:/out')[0] == 'missing'
+
+
+def test_download_index_roundtrip_and_record(tmp_path):
+    media = tmp_path / 'clip.mp4'
+    media.write_bytes(b'x' * 42)
+    key = yt.download_key('abc12345678', 'mp4')
+    assert yt.record_download(str(tmp_path), key, 'abc12345678',
+                              'https://youtube.com/watch?v=abc12345678',
+                              str(media), 'mp4', None) is True
+    index = yt.load_download_index(str(tmp_path))
+    entry = index[key]
+    assert entry['file'] == 'clip.mp4'      # stored relative to the output folder
+    assert entry['size'] == 42
+    assert entry['video_id'] == 'abc12345678'
+    assert yt.verify_download_entry(entry, str(tmp_path))[0] == 'ok'
+
+
+def test_load_download_index_missing_or_corrupt(tmp_path):
+    assert yt.load_download_index(str(tmp_path)) == {}
+    (tmp_path / yt.DOWNLOAD_INDEX_NAME).write_text('not json', encoding='utf-8')
+    assert yt.load_download_index(str(tmp_path)) == {}
+
+
+def test_check_already_downloaded_skips_existing_file(tmp_path, capsys):
+    media = tmp_path / 'clip.mp4'
+    media.write_bytes(b'x' * 10)
+    url = 'https://www.youtube.com/watch?v=abc12345678'
+    key = yt.download_key('abc12345678', 'mp4')
+    yt.record_download(str(tmp_path), key, 'abc12345678', url, str(media), 'mp4', None)
+
+    path, returned_key = yt.check_already_downloaded(url, str(tmp_path), 'mp4')
+    assert path == str(media)
+    assert returned_key == key
+    assert 'ALREADY DOWNLOADED' in capsys.readouterr().out
+
+
+def test_check_already_downloaded_redownloads_when_file_deleted(tmp_path, capsys):
+    media = tmp_path / 'clip.mp4'
+    media.write_bytes(b'x' * 10)
+    url = 'https://www.youtube.com/watch?v=abc12345678'
+    key = yt.download_key('abc12345678', 'mp4')
+    yt.record_download(str(tmp_path), key, 'abc12345678', url, str(media), 'mp4', None)
+    media.unlink()  # user deleted the file — the index must not cause a false skip
+
+    path, _ = yt.check_already_downloaded(url, str(tmp_path), 'mp4')
+    assert path is None
+    assert 'no longer there' in capsys.readouterr().out
+
+
+def test_check_already_downloaded_fragment_is_not_the_full_video(tmp_path):
+    media = tmp_path / 'clip.mp4'
+    media.write_bytes(b'x' * 10)
+    url = 'https://www.youtube.com/watch?v=abc12345678'
+    section = ['--download-sections', '*0-10.000']
+    yt.record_download(str(tmp_path), yt.download_key('abc12345678', 'mp4', section),
+                       'abc12345678', url, str(media), 'mp4', section)
+    # asking for the WHOLE video must not match the stored 10-second fragment
+    assert yt.check_already_downloaded(url, str(tmp_path), 'mp4')[0] is None
+    # ...while the same fragment does match
+    assert yt.check_already_downloaded(url, str(tmp_path), 'mp4', section)[0] == str(media)
+
+
+def test_check_already_downloaded_without_video_id(tmp_path):
+    # No id in the URL → we cannot be certain, so never skip
+    assert yt.check_already_downloaded('https://example.com/x', str(tmp_path), 'mp4') == (None, None)
+
+
+def test_human_size():
+    assert yt._human_size(0) == '0 B'
+    assert yt._human_size(1536) == '1.5 KB'
+    assert yt._human_size(5 * 1024 ** 3) == '5.0 GB'
+
+
+def test_fragment_suffix_keeps_filenames_unique():
+    # Two different fragments of one video must not collide on the same file name
+    assert yt.fragment_suffix(None) == ''
+    assert yt.fragment_suffix(['--download-sections', '*5.000-12.000']) == ' [5-12s]'
+    assert yt.fragment_suffix(['--download-sections', '*20.000-25.000']) == ' [20-25s]'
+    assert yt.fragment_suffix(['--download-sections', '*1.500-3.250']) == ' [1.5-3.25s]'
+    assert yt.fragment_suffix(['--download-sections', '*90.000-inf']) == ' [90-ends]'
+
+
+def test_expected_media_duration():
+    assert yt.expected_media_duration(300.0, None) == 300.0
+    assert yt.expected_media_duration(300.0, ['--download-sections', '*5.000-12.000']) == 7.0
+    # open-ended fragment: from start to the end of the video
+    assert yt.expected_media_duration(300.0, ['--download-sections', '*90.000-inf']) == 210.0
+    # unknown video length -> unknown expectation
+    assert yt.expected_media_duration(0, None) == 0.0
+
+
+def test_durations_match_full_video_is_strict():
+    assert yt.durations_match(300.0, 300.0) is True
+    assert yt.durations_match(301.5, 300.0) is True      # within 2s
+    assert yt.durations_match(280.0, 300.0) is False     # a different video
+    assert yt.durations_match(0, 300.0) is None          # unknown -> undecided
+
+
+def test_durations_match_fragment_allows_keyframe_slack():
+    # A 7s request can legitimately yield a ~9s file (cut starts at a keyframe)
+    assert yt.durations_match(9.0, 7.0, fragment=True) is True
+    assert yt.durations_match(6.5, 5.0, fragment=True) is True
+    # ...but a full-length video where a 7s fragment was expected is not a match
+    assert yt.durations_match(600.0, 7.0, fragment=True) is False
+    # a file shorter than requested means it is not the fragment either
+    assert yt.durations_match(3.0, 7.0, fragment=True) is False

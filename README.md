@@ -83,6 +83,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
 | Choose where files are saved | `--output-dir "C:\downloads"` |
 | Save a default output folder (persists) | `--set-output-dir "D:\edit"` |
+| Re-download something already fetched | `--force-download` |
 | Also export WebVTT subtitles | `--vtt` |
 | Burn subtitles into the video | `--burn` |
 | Embed a toggleable subtitle track | `--embed` |
@@ -180,6 +181,39 @@ back to Google Translate automatically on any error. Pick the model with
 # Japanese video -> best-quality Polish subtitles (Qwen3-ASR + Gemini):
 ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
 ```
+
+## 🔁 Duplicate detection (on by default)
+
+Nothing is downloaded twice. Each output folder keeps a small index
+(`.ytsubtran_downloads.json`) and every finished download is recorded there, so a
+second run of the same link stops immediately and tells you exactly why:
+
+```text
+⏭️  ALREADY DOWNLOADED — skipping the download
+Video id:   UV0mhY2Dxr0  (matched by YouTube id, not by file name)
+File:       D:\edit\Nature Relaxation Film 4K [5-12s].mp4
+Size:       13.3 MB
+Downloaded: 2026-08-08 13:11:23
+Match:      same video + same format (mp4) + same range (5.000-12.000 s)
+```
+
+What makes it trustworthy:
+
+- **Matched by YouTube video id**, not by file name — renamed titles still match,
+  and a same-named file from a different video never counts as a match.
+- **Format and range are part of the match**: an MP3 is not a duplicate of an MP4,
+  and a `--start/--end` fragment is never mistaken for the full video (fragments
+  also get their range in the file name, e.g. `… [5-12s].mp4`).
+- **The file must really be there.** If it was deleted, moved or left incomplete
+  (`.part`), the script says so and downloads it again instead of silently skipping.
+- **Files the index doesn't know** (e.g. from older runs) are verified by comparing
+  the real duration with YouTube's before being accepted; when the length doesn't
+  match, nothing is recorded and you get a warning rather than a false skip.
+- Skipping the download still runs everything else you asked for — subtitles,
+  `--resolve` normalization, insert detection — on the existing file.
+- Playlist links use yt-dlp's own download archive (`.ytsubtran_archive.txt`), so
+  already-fetched items are skipped item by item.
+- `--force-download` ignores all of this and fetches a fresh copy (overwriting).
 
 ## 🎬 DaVinci Resolve preset (`--resolve`)
 

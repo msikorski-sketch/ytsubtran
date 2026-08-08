@@ -5,6 +5,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Duplicate detection** (on by default, `--force-download` to override): each
+  output folder keeps a `.ytsubtran_downloads.json` index of finished downloads, and
+  a repeated link is skipped with a printed reason (video id, file, size, date and
+  what matched). Matching is by **YouTube video id**, not file name, and includes the
+  format and the `--start/--end` range, so an MP3 never counts as an MP4 and a
+  fragment is never mistaken for the full video. A skip only happens when the file is
+  really on disk and complete — a deleted, moved, empty or half-downloaded (`.part`)
+  file triggers a fresh download with an explanation, and a file the index does not
+  know is accepted only after its real duration is verified against YouTube's
+  (otherwise it is reported and left unrecorded rather than skipped by mistake).
+  Skipping the download still runs subtitles / `--resolve` / insert detection on the
+  existing file. Playlist links use yt-dlp's own download archive so items are
+  skipped individually.
+- Fragment downloads now carry their range in the file name (e.g.
+  `Title [5-12s].mp4`), so two different fragments of one video no longer collide on
+  the same name (previously yt-dlp skipped the second one as "already downloaded").
+
 ### Fixed
 - **"New link downloads an old video"**: the downloaded-file detection no longer
   guesses from directory listings and modification times (which could point at an
