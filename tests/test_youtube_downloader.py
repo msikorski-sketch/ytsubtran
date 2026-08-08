@@ -747,3 +747,100 @@ def test_durations_match_fragment_allows_keyframe_slack():
     assert yt.durations_match(600.0, 7.0, fragment=True) is False
     # a file shorter than requested means it is not the fragment either
     assert yt.durations_match(3.0, 7.0, fragment=True) is False
+
+
+# ---------------------------------------------------------------------------
+# extract_youtube_links — clipboard / pasted-text scanning
+# ---------------------------------------------------------------------------
+
+def test_extract_links_from_a_pasted_block():
+    # A block copied out of Discord: several posts, mixed link forms, noise
+    text = (
+        "[15.01.2026, godz. 18:00, 2 godz., Kamil Jarosinski]\n"
+        "Link: https://www.youtube.com/watch?v=toafJ1CdEBk\n"
+        "[08.01.2026] Link: https://youtu.be/dQw4w9WgXcQ?t=30\n"
+        "shorts: https://www.youtube.com/shorts/aaaaaaaaaaa\n"
+        "not a video: https://sekurak.pl/szkolenia\n"
+    )
+    assert yt.extract_youtube_links(text) == [
+        "https://www.youtube.com/watch?v=toafJ1CdEBk",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+    ]
+
+
+def test_extract_links_deduplicates_keeping_order():
+    text = ("https://youtu.be/dQw4w9WgXcQ and again "
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLx "
+            "https://www.youtube.com/watch?v=toafJ1CdEBk")
+    assert yt.extract_youtube_links(text) == [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=toafJ1CdEBk",
+    ]
+
+
+def test_extract_links_handles_params_before_v():
+    text = "https://www.youtube.com/watch?app=desktop&feature=share&v=toafJ1CdEBk"
+    assert yt.extract_youtube_links(text) == ["https://www.youtube.com/watch?v=toafJ1CdEBk"]
+
+
+def test_extract_links_empty_and_none():
+    assert yt.extract_youtube_links('') == []
+    assert yt.extract_youtube_links(None) == []
+    assert yt.extract_youtube_links('just some text, no links here') == []
+
+
+def test_build_download_options_matches_download_youtube_signature():
+    """
+    Guards a real bug: clipboard watch mode used to build its own argument list
+    and silently dropped --start/--end, so a "5 second fragment" downloaded the
+    whole 14 GB video. Every option must map to a real download_youtube keyword.
+    """
+    import argparse
+    import inspect
+
+    args = argparse.Namespace(
+        format='mp4', subs=True, model='base', source_lang='pl', translate_to='pl',
+        prompt=None, cookies_from_browser=None, output_dir='D:/out', vtt=False,
+        burn=False, embed=False, engine='auto', qwen_model=None,
+        translate_engine='google', translate_model='gemini-2.5-flash',
+        resolve=True, force_download=False,
+    )
+    section = ['--download-sections', '*5.000-10.000']
+    opts = yt.build_download_options(args, inserts_opts=None, section_args=section)
+
+    accepted = set(inspect.signature(yt.download_youtube).parameters) - {'raw_url'}
+    assert set(opts) <= accepted           # no unknown keywords
+    assert accepted <= set(opts)           # and nothing silently left out
+    assert opts['section_args'] == section  # the option that used to go missing
+
+
+# ---------------------------------------------------------------------------
+# take_new_links — what the clipboard watcher queues
+# ---------------------------------------------------------------------------
+
+def test_take_new_links_queues_each_video_once():
+    seen = set()
+    first = yt.take_new_links("https://youtu.be/dQw4w9WgXcQ", seen)
+    assert first == ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+    # the same video copied again (any link form) is not queued a second time
+    assert yt.take_new_links("https://www.youtube.com/watch?v=dQw4w9WgXcQ", seen) == []
+    assert yt.take_new_links("https://youtu.be/dQw4w9WgXcQ&t=9", seen) == []
+
+
+def test_take_new_links_queues_a_whole_block_in_order():
+    seen = set()
+    block = ("post 1: https://youtu.be/aaaaaaaaaaa\n"
+             "post 2: https://www.youtube.com/watch?v=bbbbbbbbbbb\n"
+             "post 3 (repeat of 1): https://youtu.be/aaaaaaaaaaa\n")
+    assert yt.take_new_links(block, seen) == [
+        "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+        "https://www.youtube.com/watch?v=bbbbbbbbbbb",
+    ]
+    assert len(seen) == 2
+
+
+def test_take_new_links_ignores_text_without_links():
+    seen = set()
+    assert yt.take_new_links("nothing to see here", seen) == []
+    assert seen == set()

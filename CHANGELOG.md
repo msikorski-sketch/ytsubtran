@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Clipboard watch mode** (`--watch-clipboard`, `--watch-interval`): leave it
+  running and every YouTube link you copy downloads by itself, using the same options
+  as a normal run (`--resolve`, `--subs`, `--output-dir`...). The clipboard is watched
+  in a background thread and links go through a **queue**, so you can keep copying
+  while a download is running instead of waiting for it to finish; each message shows
+  how many links are still waiting, a failed download does not stop the queue, and
+  Ctrl+C prints whatever was still queued. Copying a whole block of
+  text queues every link found in it — handy for a list of posts copied out of
+  Discord — and duplicate links inside one copy are collapsed. All link forms are
+  recognized (`watch?v=`, `youtu.be`, `shorts`, `live`, `embed`). Whatever sits in the
+  clipboard before the mode starts is deliberately ignored, so starting it never
+  downloads something copied earlier for another purpose. Reads the clipboard through
+  pyperclip when available, otherwise tkinter, otherwise the OS clipboard tool.
 - **Duplicate detection** (on by default, `--force-download` to override): each
   output folder keeps a `.ytsubtran_downloads.json` index of finished downloads, and
   a repeated link is skipped with a printed reason (video id, file, size, date and

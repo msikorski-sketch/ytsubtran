@@ -84,6 +84,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Choose where files are saved | `--output-dir "C:\downloads"` |
 | Save a default output folder (persists) | `--set-output-dir "D:\edit"` |
 | Re-download something already fetched | `--force-download` |
+| Download whatever you copy (watch mode) | `--watch-clipboard` |
 | Also export WebVTT subtitles | `--vtt` |
 | Burn subtitles into the video | `--burn` |
 | Embed a toggleable subtitle track | `--embed` |
@@ -181,6 +182,31 @@ back to Google Translate automatically on any error. Pick the model with
 # Japanese video -> best-quality Polish subtitles (Qwen3-ASR + Gemini):
 ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
 ```
+
+## 📋 Clipboard watch mode (`--watch-clipboard`)
+
+Leave it running and just copy links — each one downloads by itself, with whatever
+options you started it with:
+
+```bash
+ytsubtran --watch-clipboard --resolve --subs --translate-to pl
+```
+
+- **Keep copying while a download runs** — the clipboard is watched in a separate
+  thread, so new links land in a queue instead of being missed, and are downloaded
+  one after another. Each message tells you how many are still waiting.
+- Copying a **whole block of text** queues every link inside it, so you can select a
+  list of posts (e.g. in Discord), hit Ctrl+C once, and get all of them.
+- Understands `watch?v=`, `youtu.be`, `shorts`, `live` and `embed` links, and drops
+  duplicates within the same copy.
+- Whatever is in the clipboard **before** you start is left alone — only new copies
+  trigger a download.
+- Each video is handled once per session, and the duplicate detection below keeps
+  re-runs from downloading anything twice.
+- A failed download does not stop the queue; on Ctrl+C anything still queued is
+  printed so you know what was left.
+- `--watch-interval` changes how often the clipboard is checked (default: 1 s).
+  Stop with Ctrl+C.
 
 ## 🔁 Duplicate detection (on by default)
 

@@ -35,6 +35,27 @@ def extract_url(text):
     return clean_text
 
 
+# Wszystkie formy linków YouTube, w jakich trafiają do schowka / na Discorda
+YOUTUBE_LINK_PATTERN = re.compile(
+    r'(?:youtube\.com/(?:watch\?(?:[^\s&]*&)*v=|shorts/|live/|embed/)|youtu\.be/)'
+    r'([0-9A-Za-z_-]{11})'
+)
+
+
+def extract_youtube_links(text):
+    """
+    Wyciąga WSZYSTKIE linki do filmów YouTube z dowolnego tekstu (np. bloku
+    skopiowanego z Discorda), sprowadza je do postaci watch?v=... i usuwa
+    duplikaty, zachowując kolejność. Czysta funkcja.
+    """
+    seen = []
+    for video_id in YOUTUBE_LINK_PATTERN.findall(text or ''):
+        url = f'https://www.youtube.com/watch?v={video_id}'
+        if url not in seen:
+            seen.append(url)
+    return seen
+
+
 def is_playlist_url(url):
     """
     Czy to link CAŁEJ playlisty (bez wskazanego filmu)? Dla takich linków
@@ -2289,6 +2310,213 @@ def prompt_output_dir():
     return answer or default
 
 
+# ---------------------------------------------------------------------------
+# Clipboard watch mode — copy a link, the download starts by itself
+# ---------------------------------------------------------------------------
+
+def _pick_clipboard_reader():
+    """
+    Zwraca funkcję czytającą schowek. Kolejno próbuje: pyperclip (jeśli jest),
+    tkinter (biblioteka standardowa) i wreszcie narzędzie systemowe. Zwraca
+    None, gdy żadna metoda nie działa.
+    """
+    try:
+        import pyperclip
+        pyperclip.paste()  # sprawdź, że backend faktycznie działa
+        return pyperclip.paste
+    except Exception:
+        pass
+
+    try:
+        import tkinter
+        root = tkinter.Tk()
+        root.withdraw()
+
+        def read_tk():
+            root.update()
+            try:
+                return root.clipboard_get()
+            except tkinter.TclError:
+                return ''  # pusty schowek albo zawartość nietekstowa (np. obraz)
+
+        read_tk()
+        return read_tk
+    except Exception:
+        pass
+
+    if sys.platform == 'win32':
+        command = ['powershell', '-NoProfile', '-Command', 'Get-Clipboard -Raw']
+    elif sys.platform == 'darwin':
+        command = ['pbpaste']
+    else:
+        command = ['xclip', '-selection', 'clipboard', '-o']
+
+    def read_command():
+        result = subprocess.run(command, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace')
+        return result.stdout if result.returncode == 0 else ''
+
+    try:
+        read_command()
+        return read_command
+    except Exception:
+        return None
+
+
+def take_new_links(text, seen):
+    """
+    Linki z tekstu, których jeszcze nie widzieliśmy w tej sesji. Aktualizuje
+    zbiór `seen` (identyfikatory filmów) i zwraca listę nowych adresów.
+    Wydzielone z wątku nasłuchu, żeby dało się to przetestować.
+    """
+    fresh = []
+    for url in extract_youtube_links(text):
+        video_id = video_id_from_url(url)
+        if video_id and video_id not in seen:
+            seen.add(video_id)
+            fresh.append(url)
+    return fresh
+
+
+def _clipboard_producer(pending, stop_event, interval, failure):
+    """
+    Wątek nasłuchu: obserwuje schowek i dokłada nowe linki do kolejki `pending`.
+    Działa RÓWNOLEGLE do pobierania, więc linki skopiowane w trakcie ściągania
+    nie giną — czekają w kolejce.
+    """
+    # Czytnik schowka tworzymy w TYM wątku — obiekty tkintera należą do wątku,
+    # który je utworzył, więc nie wolno ich współdzielić.
+    read_clipboard = _pick_clipboard_reader()
+    if read_clipboard is None:
+        failure.append('Cannot read the clipboard on this system. '
+                       'Install the helper library:  pip install pyperclip')
+        stop_event.set()
+        return
+
+    seen = set()
+    # Cokolwiek leży w schowku PRZED startem, zostaje nietknięte — nasłuch reaguje
+    # wyłącznie na nowe kopiowanie. Inaczej samo uruchomienie trybu ściągałoby
+    # przypadkowy link skopiowany wcześniej, w innym celu.
+    last_text = read_clipboard() or ''
+    if extract_youtube_links(last_text):
+        print('\nℹ️  Your clipboard already holds a link — leaving it alone '
+              '(copy something else and it again if you do want it).')
+    print('\n👀 Watching the clipboard... (Ctrl+C to stop)')
+
+    while not stop_event.is_set():
+        text = read_clipboard() or ''
+        if text and text != last_text:
+            last_text = text
+            for url in take_new_links(text, seen):
+                pending.put(url)
+                waiting = pending.qsize()
+                print(f'\n➕ Queued: {url}'
+                      + (f'   ({waiting} waiting)' if waiting > 1 else ''))
+        stop_event.wait(interval)
+
+
+def watch_clipboard(interval=1.0, **download_kwargs):
+    """
+    Tryb nasłuchu schowka: skopiowanie linku (albo całego bloku tekstu z wieloma
+    linkami — np. listy postów z Discorda) dokłada go do kolejki, a pobieranie
+    idzie po kolei, z tymi samymi ustawieniami co zwykłe uruchomienie
+    (--resolve, napisy, katalog...).
+
+    Nasłuch chodzi w osobnym wątku, więc MOŻNA kopiować kolejne linki w trakcie
+    pobierania — trafiają do kolejki zamiast przepaść. Każdy film jest brany raz
+    na sesję, a wykrywanie duplikatów pilnuje, żeby nie pobrać ponownie czegoś,
+    co już leży w katalogu docelowym.
+    """
+    import queue
+    import threading
+
+    print('\n' + '=' * 70)
+    print('📋 CLIPBOARD WATCH MODE')
+    print('=' * 70)
+    print('Copy a YouTube link anywhere (Ctrl+C) and it is downloaded for you.')
+    print('You can keep copying while a download runs — links wait in a queue.')
+    print('Copying a whole block of text queues every link inside it, which is')
+    print('handy for a list of posts copied out of Discord.')
+    print(f'Saving to: {download_kwargs.get("output_dir") or os.getcwd()}')
+    print('\nPress Ctrl+C here to stop watching.')
+    print('=' * 70)
+
+    pending = queue.Queue()
+    stop_event = threading.Event()
+    failure = []
+    watcher = threading.Thread(
+        target=_clipboard_producer,
+        args=(pending, stop_event, interval, failure),
+        daemon=True,
+    )
+    watcher.start()
+
+    done = 0
+    try:
+        while not stop_event.is_set():
+            try:
+                url = pending.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            waiting = pending.qsize()
+            done += 1
+            print(f'\n▶️  Download {done}: {url}'
+                  + (f'   ({waiting} more in the queue)' if waiting else ''))
+            try:
+                download_youtube(url, **download_kwargs)
+            except Exception as e:
+                # Jeden nieudany film nie może zabić nasłuchu ani kolejki
+                print(f'\n✗ Download failed for {url}: {e}')
+            if pending.empty():
+                print('\n👀 Queue empty — watching the clipboard... (Ctrl+C to stop)')
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_event.set()
+
+    if failure:
+        print(f'\n✗ {failure[0]}')
+        return
+
+    leftover = []
+    while not pending.empty():
+        leftover.append(pending.get())
+    print(f'\n\n👋 Stopped watching. Downloaded {done} video(s) this session.')
+    if leftover:
+        print(f'   {len(leftover)} link(s) were still queued and were NOT downloaded:')
+        for url in leftover:
+            print(f'   • {url}')
+
+
+def build_download_options(args, inserts_opts=None, section_args=None):
+    """
+    Zbiera opcje wiersza poleceń w komplet argumentów dla download_youtube().
+    Jedno miejsce dla wszystkich ścieżek uruchomienia (zwykłe pobranie, nasłuch
+    schowka) — inaczej łatwo zgubić opcję w jednej z nich.
+    """
+    return dict(
+        format_choice=args.format,
+        generate_subs=args.subs,
+        whisper_model=args.model,
+        source_lang=args.source_lang,
+        translate_to=args.translate_to,
+        initial_prompt=args.prompt,
+        cookies_from_browser=args.cookies_from_browser,
+        output_dir=args.output_dir,
+        also_vtt=args.vtt,
+        burn=args.burn,
+        embed=args.embed,
+        inserts_opts=inserts_opts,
+        section_args=section_args,
+        engine=args.engine,
+        qwen_model=args.qwen_model,
+        translate_engine=args.translate_engine,
+        translate_model=args.translate_model,
+        resolve=args.resolve,
+        force_download=args.force_download,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Download from YouTube as mp4 or mp3 with automatic error workarounds.',
@@ -2436,6 +2664,20 @@ Examples:
         metavar='DIR',
         help='Folder for output files (video and/or subtitles). If omitted, the script '
              'asks interactively (Enter = current directory).'
+    )
+    parser.add_argument(
+        '--watch-clipboard',
+        action='store_true',
+        help='Watch mode: copy a YouTube link anywhere (Ctrl+C) and it downloads by '
+             'itself — no need to paste anything here. Copying a whole block of text '
+             '(e.g. a list of posts from Discord) queues every link found in it. '
+             'Uses all the other options you pass (--resolve, --subs, --output-dir...). '
+             'Runs until you stop it with Ctrl+C. Needs no URL argument.'
+    )
+    parser.add_argument(
+        '--watch-interval',
+        type=float, default=1.0, metavar='SEC',
+        help='How often to check the clipboard in --watch-clipboard mode (default: 1 s).'
     )
     parser.add_argument(
         '--force-download',
@@ -2619,10 +2861,12 @@ Examples:
 
     args = parser.parse_args()
 
-    if not args.file and not args.url and not args.organize and not args.set_output_dir:
+    if (not args.file and not args.url and not args.organize and not args.set_output_dir
+            and not args.watch_clipboard):
         parser.error('Provide a YouTube link, use --file with a path to a file on disk, '
-                     'use --organize with a folder to catalog, or --set-output-dir '
-                     'to save a default output folder.')
+                     'use --organize with a folder to catalog, --watch-clipboard to '
+                     'download whatever you copy, or --set-output-dir to save a default '
+                     'output folder.')
 
     # Trwała domyślna lokalizacja pobierania (przechowywana między uruchomieniami)
     if args.set_output_dir:
@@ -2636,7 +2880,7 @@ Examples:
             print(f'  (stored in {APP_CONFIG_PATH}; a one-off --output-dir still wins)')
         else:
             print(f'⚠️  Could not write {APP_CONFIG_PATH} — the default was NOT saved.')
-        if not args.file and not args.url and not args.organize:
+        if not args.file and not args.url and not args.organize and not args.watch_clipboard:
             return  # samodzielne użycie: tylko zapisz ustawienie
         if not args.output_dir:
             args.output_dir = target
@@ -2711,6 +2955,14 @@ Examples:
             insert_kinds=tuple(k.strip().lower() for k in args.insert_kinds.split(',') if k.strip()) or ('clip',),
         )
 
+    # Jeden komplet opcji pobierania dla WSZYSTKICH ścieżek (zwykłe pobranie i
+    # nasłuch schowka) — dzięki temu żadna opcja nie zgubi się w jednej z nich.
+    download_opts = build_download_options(args, inserts_opts, section_args)
+
+    if args.watch_clipboard:
+        watch_clipboard(interval=args.watch_interval, **download_opts)
+        return
+
     if args.file:
         # Local-file mode — no download
         if not os.path.exists(args.file):
@@ -2733,14 +2985,7 @@ Examples:
         if inserts_opts:
             process_inserts(args.file, url=None, output_dir=args.output_dir, **inserts_opts)
     else:  # args.url
-        download_youtube(args.url, args.format, args.subs, args.model,
-                         args.source_lang, args.translate_to, args.prompt,
-                         args.cookies_from_browser, args.output_dir, args.vtt,
-                         args.burn, args.embed, inserts_opts, section_args,
-                         engine=args.engine, qwen_model=args.qwen_model,
-                         translate_engine=args.translate_engine,
-                         translate_model=args.translate_model,
-                         resolve=args.resolve, force_download=args.force_download)
+        download_youtube(args.url, **download_opts)
 
 
 if __name__ == '__main__':
