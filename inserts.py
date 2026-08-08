@@ -373,8 +373,18 @@ def get_gemini_key(force_prompt=False):
         return None
     if key:
         try:
+            # Scal z istniejącą konfiguracją — plik trzyma też inne ustawienia
+            # (np. default_output_dir), których nie wolno nadpisać.
+            try:
+                with open(CONFIG_PATH, encoding='utf-8') as f:
+                    cfg = json.load(f) or {}
+                    if not isinstance(cfg, dict):
+                        cfg = {}
+            except Exception:
+                cfg = {}
+            cfg['gemini_api_key'] = key
             with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump({'gemini_api_key': key}, f)
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
             print(f'✓ Saved to {CONFIG_PATH} (delete that file to remove the key).')
         except OSError:
             pass
@@ -382,11 +392,30 @@ def get_gemini_key(force_prompt=False):
 
 
 def clear_gemini_key():
-    """Deletes the saved Gemini API key file (e.g. after it expired). No-op if absent."""
+    """
+    Usuwa zapisany klucz Gemini (np. po wygaśnięciu). Zachowuje pozostałe
+    ustawienia w pliku (np. default_output_dir); kasuje plik dopiero, gdy
+    nic innego w nim nie zostało. No-op przy braku pliku.
+    """
     try:
-        os.remove(CONFIG_PATH)
+        with open(CONFIG_PATH, encoding='utf-8') as f:
+            cfg = json.load(f) or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+        cfg.pop('gemini_api_key', None)
+        if cfg:
+            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        else:
+            os.remove(CONFIG_PATH)
     except OSError:
         pass
+    except ValueError:
+        # Plik nieczytelny/zepsuty — zachowaj dotychczasowe zachowanie (usuń)
+        try:
+            os.remove(CONFIG_PATH)
+        except OSError:
+            pass
 
 
 def _parse_time(value):

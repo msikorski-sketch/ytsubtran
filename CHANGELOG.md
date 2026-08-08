@@ -5,7 +5,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- **"New link downloads an old video"**: the downloaded-file detection no longer
+  guesses from directory listings and modification times (which could point at an
+  older file after playlist walks, re-downloads or interrupted runs) — yt-dlp now
+  reports the exact path of every finished file (`--print-to-file
+  after_move:filepath`), and the old detection remains only as a fallback.
+- **Pure playlist links** (`youtube.com/playlist?list=...`): yt-dlp ignores
+  `--no-playlist` for these and downloads every item. The script now says so up
+  front and skips the single-file post-processing steps (subtitles / `--resolve` /
+  inserts) instead of running them on an arbitrary file.
+- `extract_url` now recognizes `youtu.be`, `shorts`, `live` and `embed` links and
+  canonicalizes them to `watch?v=...`, so the `--no-playlist` protection applies
+  to them too.
+- Added `--remote-components ejs:github` to every yt-dlp call: with Deno installed,
+  YouTube's JS challenges are solved by yt-dlp's official solver and the full
+  format list is available (without it, the limited "android vr" client often
+  offers only AV1 — which also defeated the `--resolve` preset's native-H.264
+  preference).
+
 ### Added
+- **Persistent default output folder** (`--set-output-dir DIR`): saved in
+  `~/.ytsubtran.json` and used automatically whenever `--output-dir` is not given
+  (a one-off `--output-dir` still wins; the interactive prompt only appears when
+  no default is saved). Can be run standalone (no URL) just to set it. Saving the
+  Gemini API key and saving settings now merge into the shared config file instead
+  of overwriting each other.
+- **DaVinci Resolve preset** (`--resolve`): guarantees media that edits smoothly in
+  Resolve, including the free version on Windows. Prefers native H.264 (avc1) + AAC
+  when downloading (no transcode, no quality loss), then ffprobe-verifies the final
+  file and normalizes only what breaks editing: VP9/AV1/HEVC → H.264 8-bit 4:2:0,
+  Opus/Vorbis → AAC, variable frame rate → CFR; 10-bit / 4:2:2 sources become
+  DNxHR HQX in MOV with PCM audio (free Resolve decodes H.264 only in 8-bit —
+  DNxHR keeps full bit depth). Decisions follow the official Resolve 20 supported
+  codec list. Also works on local files (`--file ... --resolve` writes a sibling
+  `*_resolve` file and leaves the original untouched). Complements the automatic
+  clean-container remux that already ran for every MP4.
 - **Gemini translation engine** (`--translate-engine gemini`, `--translate-model`):
   translates the whole transcript in one context-aware LLM request instead of
   segment-by-segment Google Translate — consistent terminology and natural grammar

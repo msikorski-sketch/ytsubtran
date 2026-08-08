@@ -17,13 +17,33 @@ except (AttributeError, ValueError):
 
 
 def extract_url(text):
-    """Czyszczenie tekstu i wyciąganie linku YouTube"""
+    """
+    Czyszczenie tekstu i wyciąganie linku YouTube. Rozpoznaje linki watch,
+    youtu.be, shorts, live i embed (te skrócone formy są kanonizowane do
+    watch?v=..., żeby ochrona --no-playlist zawsze działała). Czysty link
+    playlisty przechodzi bez zmian — patrz is_playlist_url().
+    """
     clean_text = re.sub(r'[\[\]\(\)]', '', text).strip()
-    pattern = r'(https?://(?:www\.)?youtube\.com/watch\?v=[0-9A-Za-z_-]{11})'
-    match = re.search(pattern, clean_text)
+    match = re.search(r'(https?://(?:www\.|m\.)?youtube\.com/watch\?v=[0-9A-Za-z_-]{11})',
+                      clean_text)
     if match:
         return match.group(1)
+    match = re.search(r'https?://(?:youtu\.be/|(?:www\.|m\.)?youtube\.com/'
+                      r'(?:shorts|live|embed)/)([0-9A-Za-z_-]{11})', clean_text)
+    if match:
+        return f'https://www.youtube.com/watch?v={match.group(1)}'
     return clean_text
+
+
+def is_playlist_url(url):
+    """
+    Czy to link CAŁEJ playlisty (bez wskazanego filmu)? Dla takich linków
+    yt-dlp IGNORUJE --no-playlist i pobiera wszystkie pozycje — skrypt musi
+    o tym uprzedzić i pominąć kroki po-pobraniowe (napisy działają na jednym
+    pliku, nie na całej liście).
+    """
+    u = (url or '').lower()
+    return '/playlist' in u or ('list=' in u and 'v=' not in u)
 
 
 def check_whisper_installed():
@@ -859,6 +879,11 @@ COMMON_YTDLP_FLAGS = [
     '--fragment-retries', '10', # ponów pobieranie pojedynczych fragmentów
     '--socket-timeout', '30',   # nie zawieszaj się w nieskończoność
     '--continue',               # wznawiaj przerwane pobierania (pliki .part)
+    # Oficjalny skrypt yt-dlp rozwiązujący wyzwania JS YouTube'a (wymaga
+    # zainstalowanego Deno). Bez niego yt-dlp używa okrojonego klienta
+    # "android vr", który nie oferuje wszystkich formatów (np. avc1 dla
+    # presetu --resolve). Ignorowane bezpiecznie, gdy Deno nie ma.
+    '--remote-components', 'ejs:github',
     '--geo-bypass',             # próba automatycznego obejścia blokady regionalnej
     '--newline',                # postęp w osobnych liniach (czytelny log)
     '--ignore-errors',          # nie wywalaj się na pojedynczym drobnym błędzie
@@ -1151,16 +1176,234 @@ def remux_for_resolve(filepath):
     return filepath
 
 
+def _parse_rate(rate):
+    """Parsuje ffprobe'owy ułamek klatkarzu ('30000/1001') na float. 0.0 gdy brak/zła wartość."""
+    try:
+        if '/' in str(rate):
+            num, den = str(rate).split('/', 1)
+            num, den = float(num), float(den)
+            return num / den if den else 0.0
+        return float(rate)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_vfr(r_frame_rate, avg_frame_rate, tolerance=0.01):
+    """
+    Zmienna klatkarz (VFR)? Porównuje deklarowany (r_frame_rate) i faktyczny
+    średni (avg_frame_rate) klatkarz strumienia — rozjazd > 1% oznacza VFR,
+    który w DaVinci Resolve powoduje dryf audio na osi czasu.
+    """
+    r, avg = _parse_rate(r_frame_rate), _parse_rate(avg_frame_rate)
+    if r <= 0 or avg <= 0:
+        return False
+    return abs(r - avg) / r > tolerance
+
+
+def _is_high_depth(pix_fmt):
+    """
+    Czy format pikseli przekracza 8-bit 4:2:0 (10/12/16-bit albo chroma
+    4:2:2 / 4:4:4)? Darmowy Resolve na Windows dekoduje H.264 tylko 8-bit,
+    więc taki materiał wymaga DNxHR zamiast H.264 (żeby nie tracić głębi).
+    """
+    if not pix_fmt:
+        return False
+    p = pix_fmt.lower()
+    return any(tag in p for tag in ('10', '12', '16', '422', '444'))
+
+
+def resolve_transcode_plan(vcodec, pix_fmt, acodec, vfr=False):
+    """
+    Decyzja (czysta, testowalna): co przekodować, żeby plik montował się
+    gładko w DaVinci Resolve (także darmowym, na Windows) — stan na
+    oficjalną listę kodeków Resolve 20 (2026):
+
+    - free/Windows dekoduje H.264 wyłącznie w profilach 8-bit; VP9/AV1/HEVC
+      są czytane, ale long-GOP bez akceleracji tnie się na osi czasu,
+      a starsze wersje Resolve (18/19) czytają je zawodnie → normalizujemy;
+    - materiał 10/12-bit lub 4:2:2/4:4:4 → DNxHR HQX w MOV (natywny kodek
+      Blackmagic, pełna głębia nawet w wersji free) + audio PCM;
+    - materiał 8-bit → H.264 8-bit 4:2:0 MP4 + AAC;
+    - Opus/Vorbis → AAC (Opus w MP4 czyta dopiero Resolve 20);
+    - zmienna klatkarz (VFR) → CFR (inaczej dryfuje audio na timeline).
+
+    Zwraca {'video': bool, 'audio': bool, 'target': 'h264'|'dnxhr',
+            'reasons': [str, ...]}.
+    """
+    reasons = []
+    target = 'dnxhr' if _is_high_depth(pix_fmt) else 'h264'
+
+    video = False
+    if target == 'dnxhr':
+        video = True
+        reasons.append(f'{vcodec} {pix_fmt} (10-bit/4:2:2 class) → DNxHR HQX '
+                       '(free Resolve on Windows decodes H.264 only in 8-bit)')
+    elif vcodec != 'h264':
+        video = True
+        reasons.append(f'video codec "{vcodec}" → H.264 8-bit (smooth timeline, '
+                       'works in every Resolve version)')
+    elif pix_fmt and pix_fmt not in ('yuv420p', 'yuvj420p'):
+        video = True
+        reasons.append(f'pixel format "{pix_fmt}" → yuv420p (8-bit 4:2:0)')
+    elif vfr:
+        video = True
+        reasons.append('variable frame rate → constant (CFR) — VFR drifts audio in Resolve')
+
+    if target == 'dnxhr':
+        # Kontener MOV z DNxHR dostaje montażowy standard: audio PCM
+        audio = acodec is not None and not str(acodec).startswith('pcm_')
+        if audio:
+            reasons.append(f'audio "{acodec}" → PCM 16-bit (editing standard for MOV)')
+    else:
+        audio = acodec is not None and acodec not in (
+            'aac', 'mp3', 'pcm_s16le', 'pcm_s24le', 'pcm_s16be', 'pcm_s24be')
+        if audio:
+            reasons.append(f'audio codec "{acodec}" → AAC')
+
+    return {'video': video, 'audio': audio, 'target': target, 'reasons': reasons}
+
+
+def _ffprobe_streams(path):
+    """
+    Odczytuje ffprobe'em parametry pierwszego strumienia wideo i audio.
+    Zwraca {'vcodec','pix_fmt','acodec','vfr'} albo None przy błędzie.
+    """
+    cmd = ['ffprobe', '-v', 'error', '-print_format', 'json', '-show_streams', path]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace')
+    except FileNotFoundError:
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        streams = json.loads(result.stdout).get('streams', [])
+    except (ValueError, AttributeError):
+        return None
+    video = next((s for s in streams if s.get('codec_type') == 'video'), None)
+    audio = next((s for s in streams if s.get('codec_type') == 'audio'), None)
+    if video is None:
+        return None
+    return {
+        'vcodec': video.get('codec_name'),
+        'pix_fmt': video.get('pix_fmt'),
+        'acodec': audio.get('codec_name') if audio else None,
+        'vfr': _is_vfr(video.get('r_frame_rate'), video.get('avg_frame_rate')),
+    }
+
+
+def ensure_resolve_ready(path, in_place=True):
+    """
+    Preset DaVinci Resolve: gwarantuje plik, który darmowy Resolve na Windows
+    otwiera z pełnym obrazem i dźwiękiem (H.264 8-bit 4:2:0, CFR, AAC, MP4).
+
+    Sprawdza kodeki ffprobe'em i przekoduje TYLKO to, co konieczne (np. sam
+    dźwięk Opus→AAC przy skopiowaniu wideo 1:1). Gdy plik już jest zgodny —
+    nic nie robi. `in_place=True` podmienia plik (ścieżka pobierania);
+    `in_place=False` zapisuje obok jako <nazwa>_resolve.mp4 i zostawia
+    oryginał (tryb --file). Zwraca ścieżkę pliku zdatnego dla Resolve.
+    """
+    if not path or not os.path.exists(path):
+        return path
+    if not check_ffmpeg_installed():
+        print('⚠️  DaVinci preset: ffmpeg is missing — cannot verify/transcode the file.')
+        return path
+
+    info = _ffprobe_streams(path)
+    if info is None:
+        print('⚠️  DaVinci preset: could not read stream info (ffprobe) — leaving file as is.')
+        return path
+
+    plan = resolve_transcode_plan(info['vcodec'], info['pix_fmt'],
+                                  info['acodec'], info['vfr'])
+    if not plan['video'] and not plan['audio']:
+        print('🎬 DaVinci preset: file is already Resolve-ready '
+              '(H.264 8-bit 4:2:0 + AAC, constant frame rate).')
+        return path
+
+    print('🎬 DaVinci preset: transcoding for Resolve compatibility:')
+    for reason in plan['reasons']:
+        print(f'   • {reason}')
+
+    base = os.path.splitext(path)[0]
+    if plan['target'] == 'dnxhr':
+        # DNxHR żyje w kontenerze MOV — zawsze nowy plik obok (inne rozszerzenie)
+        out = f'{base}_resolve.mov'
+        tmp = out
+        in_place = False
+    elif in_place:
+        out = path
+        tmp = f'{base}.resolve.tmp.mp4'
+    else:
+        out = f'{base}_resolve.mp4'
+        tmp = out
+
+    cmd = ['ffmpeg', '-y', '-i', path, '-map', '0:v:0', '-map', '0:a:0?']
+    if plan['target'] == 'dnxhr':
+        cmd += ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hqx', '-pix_fmt', 'yuv422p10le']
+        cmd += ['-c:a', 'pcm_s16le'] if plan['audio'] else ['-c:a', 'copy']
+    else:
+        if plan['video']:
+            cmd += ['-c:v', 'libx264', '-crf', '18', '-preset', 'medium',
+                    '-pix_fmt', 'yuv420p']
+        else:
+            cmd += ['-c:v', 'copy']
+        cmd += ['-c:a', 'aac', '-b:a', '320k'] if plan['audio'] else ['-c:a', 'copy']
+        cmd += ['-movflags', '+faststart']
+    if plan['video'] and info['vfr']:
+        cmd += ['-fps_mode', 'cfr']
+    cmd += ['-avoid_negative_ts', 'make_zero', tmp]
+
+    if plan['video']:
+        print('   (re-encoding video — this may take a while)')
+    rc, ffmpeg_output = run_ffmpeg(cmd)
+    if rc != 0 or not os.path.exists(tmp):
+        try:
+            if tmp != out and os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        print('⚠️  DaVinci preset: transcode failed — keeping the original file.')
+        tail = '\n'.join((ffmpeg_output or '').strip().splitlines()[-4:])
+        if tail:
+            print(tail)
+        return path
+
+    if in_place:
+        try:
+            os.replace(tmp, out)
+        except OSError:
+            return tmp
+    if plan['target'] == 'dnxhr':
+        print('   ℹ️  DNxHR is an editing (intra-frame) codec — the file is much '
+              'larger than the source, but scrubs perfectly and keeps full bit depth.')
+    print(f'✓ DaVinci preset: Resolve-ready file: {out}')
+    return out
+
+
 def try_download(url, format_spec, format_name, output_template, extra_args, output_dir,
                  format_choice, cookies_from_browser=None):
     """
     Próbuje pobrać wideo z danym formatem.
-    Zwraca: (success, nazwa_pliku_lub_None, output)
+    Zwraca: (success, ścieżka_pliku_lub_None, output)
+
+    Ścieżkę ukończonego pliku podaje SAM yt-dlp (--print-to-file
+    after_move:filepath) — bez zgadywania po zawartości katalogu i dacie
+    modyfikacji, które przy playlistach / ponownych pobraniach potrafiły
+    wskazać stary plik. Stara detekcja zostaje tylko jako fallback.
     """
+    import tempfile
+    fd, print_file = tempfile.mkstemp(prefix='ytsubtran_paths_', suffix='.txt')
+    os.close(fd)
+
     command = [
         sys.executable, '-m', 'yt_dlp',
         '-f', format_spec,
         '-o', output_template,
+        # --print-to-file samo w sobie włączyłoby tryb symulacji — --no-simulate
+        # gwarantuje, że pobieranie faktycznie nastąpi.
+        '--no-simulate',
+        '--print-to-file', 'after_move:filepath', print_file,
     ]
     command.extend(COMMON_YTDLP_FLAGS)
     if cookies_from_browser:
@@ -1174,15 +1417,36 @@ def try_download(url, format_spec, format_name, output_template, extra_args, out
     print(f'Format: {format_spec}')
 
     before_files = set(os.listdir(output_dir)) if os.path.isdir(output_dir) else set()
-    returncode, output = run_ytdlp(command)
+    try:
+        returncode, output = run_ytdlp(command)
 
-    if returncode == 0:
-        filename = detect_downloaded_file(before_files, output_dir, format_choice)
-        print(f'✓ Success! Downloaded using: {format_name}')
-        return True, filename, output
+        if returncode == 0:
+            filename = None
+            for line in reversed(_read_printed_paths(print_file)):
+                if os.path.exists(line):
+                    filename = line  # ostatni ukończony plik (ścieżka absolutna)
+                    break
+            if not filename:
+                filename = detect_downloaded_file(before_files, output_dir, format_choice)
+            print(f'✓ Success! Downloaded using: {format_name}')
+            return True, filename, output
 
-    print(f'✗ Failed: {format_name}')
-    return False, None, output
+        print(f'✗ Failed: {format_name}')
+        return False, None, output
+    finally:
+        try:
+            os.remove(print_file)
+        except OSError:
+            pass
+
+
+def _read_printed_paths(print_file):
+    """Niepuste linie z pliku --print-to-file (jedna ścieżka na ukończony plik)."""
+    try:
+        with open(print_file, encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except OSError:
+        return []
 
 
 def attempt_all_strategies(url, strategies, output_template, output_dir, format_choice,
@@ -1360,7 +1624,8 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
                      burn=False, embed=False, inserts_opts=None, section_args=None,
                      engine='auto', qwen_model=None,
-                     translate_engine='google', translate_model='gemini-2.5-flash'):
+                     translate_engine='google', translate_model='gemini-2.5-flash',
+                     resolve=False):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -1372,9 +1637,23 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         output_dir = os.getcwd()
     output_template = os.path.join(output_dir, '%(title)s.%(ext)s')
 
+    # Czysty link playlisty: yt-dlp pobierze WSZYSTKIE pozycje (--no-playlist
+    # chroni tylko linki do pojedynczego filmu z doklejonym &list=...).
+    playlist_mode = is_playlist_url(url)
+    if playlist_mode:
+        print('\n📃 Playlist link detected — every item on the list will be downloaded.')
+        print('   Post-processing (subtitles / --resolve normalization / inserts) works')
+        print('   on a single file, so it is SKIPPED in playlist mode. To use those,')
+        print('   pass a link to one video (the part before "&list=" in the address).')
+
     print(f'\nDownloading from: {url}')
     print(f'Output directory: {output_dir}')
     print(f'Format: {format_choice}')
+    if resolve and format_choice == 'mp4':
+        print('DaVinci preset: ON — preferring native H.264+AAC, then verifying '
+              'codecs and normalizing only if needed')
+    elif resolve:
+        print('ℹ️  --resolve only affects video (mp4) downloads — ignored for mp3.')
     if generate_subs:
         print(f'Generating subtitles: YES (model: {whisper_model})')
         print(f'  Audio language: {lang_name(source_lang)}')
@@ -1402,6 +1681,17 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
             ('bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]',
              'Best MP4 with separate audio',
              ['--merge-output-format', 'mp4']),
+        ]
+        if resolve:
+            # Preset DaVinci: najpierw natywne H.264 (avc1) + AAC — zero
+            # transkodowania, Resolve czyta to gładko w każdej wersji. YouTube
+            # daje avc1 zwykle do 1080p; wyższe rozdzielczości (VP9/AV1) złapie
+            # kolejna strategia, a normalizację zrobi ensure_resolve_ready().
+            strategies.insert(0, (
+                'bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]',
+                'Native H.264 (avc1) + AAC — DaVinci Resolve preset',
+                ['--merge-output-format', 'mp4']))
+        strategies += [
 
             ('bestvideo+bestaudio/best',
              'Best quality (any codecs) with merging',
@@ -1498,6 +1788,14 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         print('=' * 60)
         return
 
+    # Tryb playlisty: pliki pobrane, ale kroki po-pobraniowe (napisy, --resolve,
+    # inserty) działają na pojedynczym pliku — kończymy z czytelnym komunikatem.
+    if playlist_mode:
+        if generate_subs or inserts_opts or resolve:
+            print('\nℹ️  Playlist mode: subtitles / --resolve / insert detection were '
+                  'skipped. Re-run with --file "<path>" for individual files.')
+        return
+
     # Resolve the absolute path of the downloaded file (used by subtitles + inserts)
     final_path = None
     if not downloaded_file:
@@ -1517,6 +1815,10 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
     # Resolve mis-syncs.
     if final_path and format_choice == 'mp4':
         final_path = remux_for_resolve(final_path)
+        # Preset DaVinci: zweryfikuj kodeki i znormalizuj plik tylko w razie
+        # potrzeby (np. VP9/Opus po strategii awaryjnej, materiał 10-bit).
+        if resolve:
+            final_path = ensure_resolve_ready(final_path, in_place=True)
 
     # Subtitle generation (MP4 only)
     if generate_subs and format_choice == 'mp4':
@@ -1537,6 +1839,53 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
             process_inserts(final_path, url=url, output_dir=output_dir, **inserts_opts)
         else:
             print('\n⚠️  Could not find the downloaded file for insert detection.')
+
+
+# Wspólny plik ustawień narzędzia (dzielony z kluczem Gemini z inserts.py)
+APP_CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.ytsubtran.json')
+
+
+def load_app_config():
+    """Czyta ~/.ytsubtran.json. Zwraca {} przy braku/uszkodzeniu pliku."""
+    try:
+        with open(APP_CONFIG_PATH, encoding='utf-8') as f:
+            data = json.load(f) or {}
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_app_config_value(key, value):
+    """
+    Zapisuje jedno ustawienie do ~/.ytsubtran.json, scalając z istniejącą
+    zawartością (nie niszczy np. zapisanego klucza Gemini). Zwraca True/False.
+    """
+    cfg = load_app_config()
+    cfg[key] = value
+    try:
+        with open(APP_CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError:
+        return False
+
+
+def resolve_default_output_dir():
+    """
+    Zwraca zapisaną domyślną lokalizację pobierania (default_output_dir) albo
+    None. Gdy zapisany katalog nie istnieje, próbuje go utworzyć; przy
+    niepowodzeniu (np. odpięty dysk) zwraca None z ostrzeżeniem.
+    """
+    saved = load_app_config().get('default_output_dir')
+    if not saved:
+        return None
+    try:
+        os.makedirs(saved, exist_ok=True)
+        return saved
+    except OSError as e:
+        print(f'⚠️  Saved default output folder is unavailable ({saved}): {e}')
+        print('   Falling back to asking/current folder. Set a new one with --set-output-dir.')
+        return None
 
 
 def prompt_output_dir():
@@ -1590,6 +1939,16 @@ Examples:
 
   # Download only a fragment (1:30 → 3:00):
   %(prog)s "https://youtube.com/watch?v=..." --start 1:30 --end 3:00
+
+  # Media guaranteed to edit smoothly in DaVinci Resolve (free/Windows too):
+  %(prog)s "https://youtube.com/watch?v=..." --resolve
+
+  # Set a permanent default output folder once, then download straight into it:
+  %(prog)s --set-output-dir "D:\\edit"
+  %(prog)s "https://youtube.com/watch?v=..." --resolve
+
+  # Make an existing local file Resolve-ready (writes <name>_resolve next to it):
+  %(prog)s --file "C:\\videos\\clip.mp4" --resolve
         """
     )
     parser.add_argument('url', nargs='?', help='YouTube video link')
@@ -1682,11 +2041,31 @@ Examples:
              'brave, opera...). Fixes age-restricted / "confirm you are not a bot" videos.'
     )
     parser.add_argument(
+        '--set-output-dir',
+        default=None,
+        metavar='DIR',
+        help='Save DIR as the DEFAULT output folder for all future runs (stored in '
+             '~/.ytsubtran.json) and use it for this run too. Can be used alone '
+             '(no URL) just to set it. A one-off --output-dir always wins; '
+             'remove the "default_output_dir" entry from the file to reset.'
+    )
+    parser.add_argument(
         '--output-dir',
         default=None,
         metavar='DIR',
         help='Folder for output files (video and/or subtitles). If omitted, the script '
              'asks interactively (Enter = current directory).'
+    )
+    parser.add_argument(
+        '--resolve',
+        action='store_true',
+        help='DaVinci Resolve preset: guarantee media that edits smoothly in Resolve '
+             '(incl. the free version on Windows). Prefers native H.264+AAC when '
+             'downloading, then verifies the file with ffprobe and normalizes only '
+             'what is needed: VP9/AV1/HEVC video → H.264 8-bit MP4, Opus/Vorbis '
+             'audio → AAC, variable frame rate → constant. 10-bit / 4:2:2 sources '
+             'become DNxHR HQX in MOV (+PCM audio) to keep full bit depth. Also '
+             'works with --file (writes a sibling *_resolve file, original untouched).'
     )
     parser.add_argument(
         '--vtt',
@@ -1850,9 +2229,27 @@ Examples:
 
     args = parser.parse_args()
 
-    if not args.file and not args.url and not args.organize:
+    if not args.file and not args.url and not args.organize and not args.set_output_dir:
         parser.error('Provide a YouTube link, use --file with a path to a file on disk, '
-                     'or use --organize with a folder to catalog.')
+                     'use --organize with a folder to catalog, or --set-output-dir '
+                     'to save a default output folder.')
+
+    # Trwała domyślna lokalizacja pobierania (przechowywana między uruchomieniami)
+    if args.set_output_dir:
+        target = os.path.abspath(os.path.expanduser(args.set_output_dir.strip().strip('"')))
+        try:
+            os.makedirs(target, exist_ok=True)
+        except OSError as e:
+            parser.error(f'Cannot create/use folder {target!r}: {e}')
+        if save_app_config_value('default_output_dir', target):
+            print(f'✓ Default output folder saved: {target}')
+            print(f'  (stored in {APP_CONFIG_PATH}; a one-off --output-dir still wins)')
+        else:
+            print(f'⚠️  Could not write {APP_CONFIG_PATH} — the default was NOT saved.')
+        if not args.file and not args.url and not args.organize:
+            return  # samodzielne użycie: tylko zapisz ustawienie
+        if not args.output_dir:
+            args.output_dir = target
 
     # --start/--end: parse and validate the fragment timestamps (download-only).
     section_args = None
@@ -1894,9 +2291,14 @@ Examples:
         )
         return
 
-    # Ask where to save results, unless already set via --output-dir (Enter = current folder)
+    # Where to save: --output-dir > saved default (--set-output-dir) > interactive prompt
     if not args.output_dir:
-        args.output_dir = prompt_output_dir()
+        saved = resolve_default_output_dir()
+        if saved:
+            print(f'📂 Output folder (saved default): {saved}')
+            args.output_dir = saved
+        else:
+            args.output_dir = prompt_output_dir()
 
     # Bundle insert-detection options (only if requested)
     inserts_opts = None
@@ -1924,6 +2326,11 @@ Examples:
         if not os.path.exists(args.file):
             print(f'✗ File not found: {args.file}')
             sys.exit(1)
+        # Preset DaVinci dla pliku lokalnego: nowy plik *_resolve obok oryginału;
+        # dalsze kroki (napisy, inserty) pracują na wersji zdatnej dla Resolve,
+        # więc nazwy plików .srt pasują do pliku, który trafi na timeline.
+        if args.resolve:
+            args.file = ensure_resolve_ready(args.file, in_place=False)
         # Generate subtitles unless the user asked ONLY for insert detection
         wants_subs = args.subs or bool(args.translate_to) or inserts_opts is None
         if wants_subs:
@@ -1942,7 +2349,8 @@ Examples:
                          args.burn, args.embed, inserts_opts, section_args,
                          engine=args.engine, qwen_model=args.qwen_model,
                          translate_engine=args.translate_engine,
-                         translate_model=args.translate_model)
+                         translate_model=args.translate_model,
+                         resolve=args.resolve)
 
 
 if __name__ == '__main__':

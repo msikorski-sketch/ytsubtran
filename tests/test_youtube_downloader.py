@@ -408,3 +408,164 @@ def test_parse_gemini_translation_rejects_ambiguous_wrapper():
 
 def test_parse_gemini_translation_coerces_and_strips():
     assert yt.parse_gemini_translation('[1, "  spacja  ", null]', 3) == ['1', 'spacja', '']
+
+
+# ---------------------------------------------------------------------------
+# DaVinci Resolve preset — frame-rate parsing and the transcode decision
+# ---------------------------------------------------------------------------
+
+def test_parse_rate_fraction_and_plain():
+    assert abs(yt._parse_rate('30000/1001') - 29.97) < 0.01
+    assert yt._parse_rate('25/1') == 25.0
+    assert yt._parse_rate('0/0') == 0.0
+    assert yt._parse_rate(None) == 0.0
+
+
+def test_is_vfr_detects_mismatch_only():
+    assert yt._is_vfr('30/1', '25/1') is True          # >1% apart -> VFR
+    assert yt._is_vfr('30000/1001', '30000/1001') is False
+    assert yt._is_vfr('0/0', '25/1') is False          # unknown -> assume CFR
+
+
+def test_high_depth_pix_fmts():
+    assert yt._is_high_depth('yuv420p') is False
+    assert yt._is_high_depth('yuvj420p') is False
+    assert yt._is_high_depth('yuv420p10le') is True    # 10-bit
+    assert yt._is_high_depth('yuv422p') is True        # 4:2:2
+    assert yt._is_high_depth(None) is False
+
+
+def test_plan_compliant_file_needs_nothing():
+    plan = yt.resolve_transcode_plan('h264', 'yuv420p', 'aac', vfr=False)
+    assert plan == {'video': False, 'audio': False, 'target': 'h264', 'reasons': []}
+
+
+def test_plan_vp9_opus_transcodes_both_to_h264_aac():
+    plan = yt.resolve_transcode_plan('vp9', 'yuv420p', 'opus')
+    assert plan['video'] and plan['audio']
+    assert plan['target'] == 'h264'
+
+
+def test_plan_audio_only_fix_keeps_video_copy():
+    # H.264 video is fine, only the Opus audio needs re-encoding
+    plan = yt.resolve_transcode_plan('h264', 'yuv420p', 'opus')
+    assert plan['video'] is False
+    assert plan['audio'] is True
+
+
+def test_plan_ten_bit_source_goes_dnxhr_with_pcm():
+    plan = yt.resolve_transcode_plan('hevc', 'yuv420p10le', 'aac')
+    assert plan['target'] == 'dnxhr'
+    assert plan['video'] is True
+    assert plan['audio'] is True   # AAC -> PCM in the MOV editing container
+
+
+def test_plan_vfr_forces_video_reencode():
+    plan = yt.resolve_transcode_plan('h264', 'yuv420p', 'aac', vfr=True)
+    assert plan['video'] is True
+    assert plan['target'] == 'h264'
+
+
+def test_plan_no_audio_track():
+    plan = yt.resolve_transcode_plan('av1', 'yuv420p', None)
+    assert plan['audio'] is False
+    assert plan['video'] is True
+
+
+# ---------------------------------------------------------------------------
+# Persistent app config (~/.ytsubtran.json) — default output folder
+# ---------------------------------------------------------------------------
+
+def test_app_config_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(yt, 'APP_CONFIG_PATH', str(tmp_path / 'cfg.json'))
+    assert yt.load_app_config() == {}
+    assert yt.save_app_config_value('default_output_dir', 'D:/edit') is True
+    assert yt.load_app_config() == {'default_output_dir': 'D:/edit'}
+
+
+def test_app_config_merge_preserves_other_keys(tmp_path, monkeypatch):
+    # The same file stores the Gemini API key — saving a setting must not eat it
+    cfg = tmp_path / 'cfg.json'
+    cfg.write_text('{"gemini_api_key": "secret"}', encoding='utf-8')
+    monkeypatch.setattr(yt, 'APP_CONFIG_PATH', str(cfg))
+    yt.save_app_config_value('default_output_dir', 'X:/y')
+    data = yt.load_app_config()
+    assert data['gemini_api_key'] == 'secret'
+    assert data['default_output_dir'] == 'X:/y'
+
+
+def test_app_config_corrupt_file_reads_as_empty(tmp_path, monkeypatch):
+    cfg = tmp_path / 'cfg.json'
+    cfg.write_text('definitely not json', encoding='utf-8')
+    monkeypatch.setattr(yt, 'APP_CONFIG_PATH', str(cfg))
+    assert yt.load_app_config() == {}
+
+
+def test_resolve_default_output_dir_creates_missing_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(yt, 'APP_CONFIG_PATH', str(tmp_path / 'cfg.json'))
+    target = tmp_path / 'downloads' / 'edit'
+    yt.save_app_config_value('default_output_dir', str(target))
+    assert yt.resolve_default_output_dir() == str(target)
+    assert target.is_dir()  # created on demand
+
+
+def test_resolve_default_output_dir_none_when_unset(tmp_path, monkeypatch):
+    monkeypatch.setattr(yt, 'APP_CONFIG_PATH', str(tmp_path / 'cfg.json'))
+    assert yt.resolve_default_output_dir() is None
+
+
+def test_inserts_clear_gemini_key_preserves_other_settings(tmp_path, monkeypatch):
+    import inserts
+    cfg = tmp_path / 'cfg.json'
+    cfg.write_text('{"gemini_api_key": "old", "default_output_dir": "D:/edit"}',
+                   encoding='utf-8')
+    monkeypatch.setattr(inserts, 'CONFIG_PATH', str(cfg))
+    inserts.clear_gemini_key()
+    import json as _json
+    data = _json.loads(cfg.read_text(encoding='utf-8'))
+    assert 'gemini_api_key' not in data
+    assert data['default_output_dir'] == 'D:/edit'
+
+
+# ---------------------------------------------------------------------------
+# extract_url — short link forms and playlist detection
+# ---------------------------------------------------------------------------
+
+def test_extract_url_youtu_be_is_canonicalized():
+    assert yt.extract_url("https://youtu.be/dQw4w9WgXcQ?t=10") == \
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+
+def test_extract_url_shorts_and_live():
+    assert yt.extract_url("https://www.youtube.com/shorts/dQw4w9WgXcQ") == \
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert yt.extract_url("https://youtube.com/live/dQw4w9WgXcQ?feature=share") == \
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+
+def test_is_playlist_url_pure_playlist():
+    assert yt.is_playlist_url("https://www.youtube.com/playlist?list=PLxyz") is True
+
+
+def test_is_playlist_url_watch_with_list_is_single_video():
+    # --no-playlist protects this form, so it is NOT playlist mode
+    assert yt.is_playlist_url("https://youtube.com/watch?v=dQw4w9WgXcQ&list=PLxyz") is False
+
+
+def test_is_playlist_url_plain_video():
+    assert yt.is_playlist_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ") is False
+    assert yt.is_playlist_url(None) is False
+
+
+# ---------------------------------------------------------------------------
+# _read_printed_paths — yt-dlp --print-to-file output
+# ---------------------------------------------------------------------------
+
+def test_read_printed_paths(tmp_path):
+    f = tmp_path / 'paths.txt'
+    f.write_text('C:\a.mp4\n\n  \nC:\b.mp4\n', encoding='utf-8')
+    assert yt._read_printed_paths(str(f)) == ['C:\a.mp4', 'C:\b.mp4']
+
+
+def test_read_printed_paths_missing_file():
+    assert yt._read_printed_paths('Z:/definitely/not/there.txt') == []

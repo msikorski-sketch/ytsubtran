@@ -77,10 +77,12 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Context-aware LLM translation (Gemini) | `... --translate-to pl --translate-engine gemini` |
 | Auto-detect spoken language | `... --source-lang auto` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
+| Guarantee smooth editing in DaVinci Resolve | `--resolve` (also with `--file`) |
 | Pick a Whisper model | `--model turbo` (or `large-v3`, `medium`, …) |
 | Improve accuracy with context | `--prompt "Pomni, Ragatha, Jax, Caine"` |
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
 | Choose where files are saved | `--output-dir "C:\downloads"` |
+| Save a default output folder (persists) | `--set-output-dir "D:\edit"` |
 | Also export WebVTT subtitles | `--vtt` |
 | Burn subtitles into the video | `--burn` |
 | Embed a toggleable subtitle track | `--embed` |
@@ -178,6 +180,28 @@ back to Google Translate automatically on any error. Pick the model with
 # Japanese video -> best-quality Polish subtitles (Qwen3-ASR + Gemini):
 ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
 ```
+
+## 🎬 DaVinci Resolve preset (`--resolve`)
+
+YouTube increasingly serves VP9/AV1 video with Opus audio. Resolve 20 can
+technically open most of it, but long-GOP VP9/AV1 decodes in software in the free
+version (choppy timeline), Opus/10-bit H.264 fail outright in older or free
+versions, and variable frame rate drifts audio. `--resolve` guarantees files that
+just edit:
+
+1. **Downloads native H.264 (avc1) + AAC first** — no transcode, no quality loss
+   (YouTube offers avc1 up to ~1080p; higher-res sources fall through to the
+   normal strategies and get normalized below).
+2. **Verifies the final file with ffprobe** and re-encodes only what's wrong,
+   per the official Resolve 20 codec list:
+   - VP9/AV1/HEVC video → H.264 8-bit 4:2:0 (CRF 18), Opus/Vorbis audio → AAC,
+     VFR → constant frame rate, `+faststart` MP4;
+   - **10-bit / 4:2:2 sources → DNxHR HQX in MOV + PCM audio** — free Resolve on
+     Windows decodes H.264 only in 8-bit, and DNxHR keeps the full bit depth
+     (bigger file, perfect scrubbing).
+3. Works for local files too: `--file "clip.mp4" --resolve` writes a sibling
+   `clip_resolve.*` and leaves the original untouched; subtitles generated in the
+   same run are named after the Resolve-ready file, so Resolve matches them.
 
 ## 💡 Getting the best quality
 
