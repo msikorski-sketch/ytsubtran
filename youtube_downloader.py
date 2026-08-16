@@ -2463,6 +2463,99 @@ def take_new_links(text, seen):
     return fresh
 
 
+# Kolejka nasłuchu trzymana na dysku (obok pobieranych plików), żeby przetrwała
+# zamknięcie okna, restart komputera czy awarię — inaczej ginie razem z procesem.
+QUEUE_STATE_NAME = '.ytsubtran_queue.json'
+
+
+def queue_state_path(output_dir):
+    return os.path.join(output_dir or os.getcwd(), QUEUE_STATE_NAME)
+
+
+def load_pending_queue(output_dir):
+    """Linki, które zostały w kolejce z poprzedniej sesji. [] przy braku pliku."""
+    try:
+        with open(queue_state_path(output_dir), encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get('pending')
+    if not isinstance(data, list):
+        return []
+    return [str(url) for url in data if str(url).strip()]
+
+
+def save_pending_queue(output_dir, urls):
+    """Zapisuje stan kolejki. Pusta kolejka = plik usuwany (nie zaśmiecamy katalogu)."""
+    path = queue_state_path(output_dir)
+    try:
+        if urls:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'pending': list(urls)}, f, ensure_ascii=False, indent=2)
+        elif os.path.exists(path):
+            os.remove(path)
+        return True
+    except OSError:
+        return False
+
+
+class PersistentQueue:
+    """
+    Kolejka linków, której stan jest odzwierciedlany w pliku.
+
+    Link znika z pliku dopiero po ZAKOŃCZENIU pobierania (done()), nie w chwili
+    pobrania z kolejki — dzięki temu awaria w trakcie ściągania nie gubi pozycji,
+    tylko wraca do niej przy następnym uruchomieniu.
+    """
+
+    def __init__(self, output_dir, initial=()):
+        import queue as _queue
+        import threading as _threading
+        self._queue = _queue.Queue()
+        self._empty_error = _queue.Empty
+        self._lock = _threading.Lock()
+        self._output_dir = output_dir
+        self._pending = []
+        for url in initial:
+            self.put(url, persist=False)
+        self._flush()
+
+    def _flush(self):
+        save_pending_queue(self._output_dir, self._pending)
+
+    def put(self, url, persist=True):
+        with self._lock:
+            self._pending.append(url)
+            if persist:
+                self._flush()
+        self._queue.put(url)
+
+    def get(self, timeout=None):
+        """Kolejny link albo None, gdy nic nie czeka (po upływie `timeout`)."""
+        try:
+            return self._queue.get(timeout=timeout)
+        except self._empty_error:
+            return None
+
+    def done(self, url):
+        """Oznacza link jako obsłużony — dopiero teraz znika z pliku."""
+        with self._lock:
+            if url in self._pending:
+                self._pending.remove(url)
+            self._flush()
+
+    def qsize(self):
+        return self._queue.qsize()
+
+    def empty(self):
+        return self._queue.empty()
+
+    def remaining(self):
+        with self._lock:
+            return list(self._pending)
+
+
 def _clipboard_change_token():
     """
     Licznik zmian schowka Windows (GetClipboardSequenceNumber) albo None na
@@ -2479,7 +2572,7 @@ def _clipboard_change_token():
         return None
 
 
-def _clipboard_producer(pending, stop_event, interval, failure):
+def _clipboard_producer(pending, stop_event, interval, failure, initial_seen=()):
     """
     Wątek nasłuchu: obserwuje schowek i dokłada nowe linki do kolejki `pending`.
     Działa RÓWNOLEGLE do pobierania, więc linki skopiowane w trakcie ściągania
@@ -2494,7 +2587,9 @@ def _clipboard_producer(pending, stop_event, interval, failure):
         stop_event.set()
         return
 
-    seen = set()
+    # Linki wznowione z poprzedniej sesji są już w kolejce — nie dokładamy ich
+    # ponownie, gdyby ten sam tekst nadal wisiał w schowku.
+    seen = set(initial_seen)
     # Cokolwiek leży w schowku PRZED startem, zostaje nietknięte — nasłuch reaguje
     # wyłącznie na nowe kopiowanie. Inaczej samo uruchomienie trybu ściągałoby
     # przypadkowy link skopiowany wcześniej, w innym celu.
@@ -2546,8 +2641,10 @@ def watch_clipboard(interval=1.0, **download_kwargs):
     na sesję, a wykrywanie duplikatów pilnuje, żeby nie pobrać ponownie czegoś,
     co już leży w katalogu docelowym.
     """
-    import queue
     import threading
+
+    output_dir = download_kwargs.get('output_dir') or os.getcwd()
+    resumed = load_pending_queue(output_dir)
 
     print('\n' + '=' * 70)
     print('📋 CLIPBOARD WATCH MODE')
@@ -2556,16 +2653,24 @@ def watch_clipboard(interval=1.0, **download_kwargs):
     print('You can keep copying while a download runs — links wait in a queue.')
     print('Copying a whole block of text queues every link inside it, which is')
     print('handy for a list of posts copied out of Discord.')
-    print(f'Saving to: {download_kwargs.get("output_dir") or os.getcwd()}')
+    print(f'Saving to: {output_dir}')
+    print(f'Queue file: {queue_state_path(output_dir)}')
+    print('   (the queue survives a crash — leftovers are picked up next time)')
     print('\nPress Ctrl+C here to stop watching.')
     print('=' * 70)
 
-    pending = queue.Queue()
+    if resumed:
+        print(f'\n♻️  Resuming {len(resumed)} link(s) left from an earlier session:')
+        for url in resumed:
+            print(f'   • {url}')
+
+    pending = PersistentQueue(output_dir, initial=resumed)
     stop_event = threading.Event()
     failure = []
     watcher = threading.Thread(
         target=_clipboard_producer,
         args=(pending, stop_event, interval, failure),
+        kwargs={'initial_seen': {video_id_from_url(u) for u in resumed}},
         daemon=True,
     )
     watcher.start()
@@ -2573,9 +2678,8 @@ def watch_clipboard(interval=1.0, **download_kwargs):
     done = 0
     try:
         while not stop_event.is_set():
-            try:
-                url = pending.get(timeout=0.5)
-            except queue.Empty:
+            url = pending.get(timeout=0.5)
+            if url is None:
                 continue
             waiting = pending.qsize()
             done += 1
@@ -2586,6 +2690,9 @@ def watch_clipboard(interval=1.0, **download_kwargs):
             except Exception as e:
                 # Jeden nieudany film nie może zabić nasłuchu ani kolejki
                 print(f'\n✗ Download failed for {url}: {e}')
+            # Z pliku kolejki znika dopiero TERAZ — awaria w trakcie pobierania
+            # zostawia link do wznowienia przy następnym uruchomieniu.
+            pending.done(url)
             if pending.empty():
                 print('\n👀 Queue empty — watching the clipboard... (Ctrl+C to stop)')
     except KeyboardInterrupt:
@@ -2597,12 +2704,13 @@ def watch_clipboard(interval=1.0, **download_kwargs):
         print(f'\n✗ {failure[0]}')
         return
 
-    leftover = []
-    while not pending.empty():
-        leftover.append(pending.get())
+    leftover = pending.remaining()
     print(f'\n\n👋 Stopped watching. Downloaded {done} video(s) this session.')
     if leftover:
-        print(f'   {len(leftover)} link(s) were still queued and were NOT downloaded:')
+        print(f'   {len(leftover)} link(s) still queued — saved to '
+              f'{queue_state_path(output_dir)}')
+        print('   They will be downloaded automatically next time you start '
+              '--watch-clipboard.')
         for url in leftover:
             print(f'   • {url}')
 

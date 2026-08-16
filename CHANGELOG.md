@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **The clipboard-watch queue is now stored on disk** (`.ytsubtran_queue.json` in the
+  output folder) instead of living only in memory. Closing the window, a crash or a
+  reboot no longer loses the queued links: everything still pending — including the
+  link that was being downloaded when it died — is resumed automatically at the next
+  `--watch-clipboard` start, and the file can be opened (or edited) any time to see
+  what is waiting. An entry is removed only once its download finishes, and the file
+  is deleted when the queue empties.
 - **Speed limit** (`--limit-rate 5M`) and **exponential retry backoff**: YouTube
   throttles long, fast download sessions, answering with HTTP 503 and broken
   transfers. Retries now wait 2 s, 4 s, 8 s … up to a minute instead of firing

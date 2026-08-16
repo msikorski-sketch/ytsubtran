@@ -204,8 +204,12 @@ ytsubtran --watch-clipboard --resolve --subs --translate-to pl
   it downloads (on Windows even an identical re-copy is detected).
 - Each video is handled once per session, and the duplicate detection below keeps
   re-runs from downloading anything twice.
-- A failed download does not stop the queue; on Ctrl+C anything still queued is
-  printed so you know what was left.
+- **The queue lives on disk** (`.ytsubtran_queue.json` in the output folder), so it
+  survives a closed window, a crash or a reboot: whatever was left — including the
+  link that was mid-download — is picked up automatically the next time you start
+  watch mode. You can open (or edit) that file at any point to see what is waiting.
+- A failed download does not stop the queue; on Ctrl+C anything still queued stays in
+  the file and is listed on screen.
 - `--watch-interval` changes how often the clipboard is checked (default: 1 s).
   Stop with Ctrl+C.
 

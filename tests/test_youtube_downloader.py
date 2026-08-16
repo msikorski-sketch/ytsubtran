@@ -877,3 +877,54 @@ def test_clipboard_change_token_is_safe_everywhere():
     assert token is None or isinstance(token, int)
     # stable across calls when the clipboard does not change
     assert yt._clipboard_change_token() == token or token is None
+
+
+# ---------------------------------------------------------------------------
+# Persistent watch queue — survives a crash, resumable
+# ---------------------------------------------------------------------------
+
+def test_queue_state_roundtrip(tmp_path):
+    assert yt.load_pending_queue(str(tmp_path)) == []
+    yt.save_pending_queue(str(tmp_path), ['a', 'b'])
+    assert yt.load_pending_queue(str(tmp_path)) == ['a', 'b']
+    # emptying the queue removes the file instead of leaving an empty one behind
+    yt.save_pending_queue(str(tmp_path), [])
+    assert not os.path.exists(yt.queue_state_path(str(tmp_path)))
+
+
+def test_queue_state_tolerates_garbage(tmp_path):
+    yt.queue_state_path(str(tmp_path))
+    (tmp_path / yt.QUEUE_STATE_NAME).write_text('not json', encoding='utf-8')
+    assert yt.load_pending_queue(str(tmp_path)) == []
+
+
+def test_persistent_queue_keeps_item_until_done(tmp_path):
+    q = yt.PersistentQueue(str(tmp_path))
+    q.put('https://www.youtube.com/watch?v=aaaaaaaaaaa')
+    q.put('https://www.youtube.com/watch?v=bbbbbbbbbbb')
+    assert yt.load_pending_queue(str(tmp_path)) == [
+        'https://www.youtube.com/watch?v=aaaaaaaaaaa',
+        'https://www.youtube.com/watch?v=bbbbbbbbbbb',
+    ]
+
+    url = q.get(timeout=0.1)
+    # Taking it off the queue must NOT drop it from disk yet: a crash during the
+    # download has to leave the link behind for the next run.
+    assert url in yt.load_pending_queue(str(tmp_path))
+
+    q.done(url)
+    assert yt.load_pending_queue(str(tmp_path)) == [
+        'https://www.youtube.com/watch?v=bbbbbbbbbbb']
+
+
+def test_persistent_queue_resumes_previous_session(tmp_path):
+    yt.save_pending_queue(str(tmp_path), ['https://www.youtube.com/watch?v=ccccccccccc'])
+    q = yt.PersistentQueue(str(tmp_path), initial=yt.load_pending_queue(str(tmp_path)))
+    assert q.get(timeout=0.1) == 'https://www.youtube.com/watch?v=ccccccccccc'
+    assert q.remaining() == ['https://www.youtube.com/watch?v=ccccccccccc']
+
+
+def test_persistent_queue_get_returns_none_when_empty(tmp_path):
+    q = yt.PersistentQueue(str(tmp_path))
+    assert q.get(timeout=0.05) is None
+    assert q.empty() is True
