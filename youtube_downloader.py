@@ -1317,7 +1317,33 @@ def _ffprobe_streams(path):
         'pix_fmt': video.get('pix_fmt'),
         'acodec': audio.get('codec_name') if audio else None,
         'vfr': _is_vfr(video.get('r_frame_rate'), video.get('avg_frame_rate')),
+        'width': video.get('width'),
+        'height': video.get('height'),
     }
+
+
+def media_height(path):
+    """Wysokość obrazu w pikselach (0, gdy nie wideo albo nie da się odczytać)."""
+    info = _ffprobe_streams(path) if path and os.path.exists(path) else None
+    try:
+        return int((info or {}).get('height') or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def low_quality_warning(height, threshold=720):
+    """
+    Komunikat o pobraniu w zaniżonej jakości albo '' (czysta funkcja).
+
+    Gdy YouTube dławi ruch, kolejne strategie schodzą na coraz gorsze formaty
+    (np. 18 = 360p) i pobranie „się udaje". Bez ostrzeżenia taka wersja trafia
+    do indeksu i przy kolejnych uruchomieniach film jest pomijany jako pobrany —
+    użytkownik nigdy nie dostaje pełnej jakości.
+    """
+    if not height or height >= threshold:
+        return ''
+    return (f'this copy is only {height}p — a fallback format was used because '
+            'better ones were unavailable (YouTube throttling?)')
 
 
 def ensure_resolve_ready(path, in_place=True):
@@ -1784,6 +1810,9 @@ def record_download(output_dir, key, video_id, url, path, format_choice, section
     index[key] = {
         'video_id': video_id,
         'url': url,
+        # Zapisujemy rozdzielczość, żeby przy pominięciu duplikatu było widać,
+        # JAKĄ wersję się ma (pobranie awaryjne potrafi zejść do 360p).
+        'height': media_height(path) if format_choice == 'mp4' else 0,
         # Ścieżka względna, dopóki plik leży w katalogu docelowym — dzięki temu
         # przeniesienie całego folderu nie unieważnia indeksu.
         'file': os.path.basename(path) if os.path.dirname(os.path.abspath(path))
@@ -1923,9 +1952,27 @@ def check_already_downloaded(url, output_dir, format_choice, section_args=None):
     print(f'Size:       {_human_size(entry.get("size"))}')
     if entry.get('downloaded_at'):
         print(f'Downloaded: {entry["downloaded_at"].replace("T", " ")}')
+    # Wpisy zapisane przed wprowadzeniem pola 'height' uzupełniamy w locie —
+    # inaczej stare pobrania (także te awaryjne, w 360p) byłyby pomijane bez
+    # słowa o jakości.
+    if 'height' not in entry and format_choice == 'mp4':
+        entry['height'] = media_height(path)
+        index = load_download_index(output_dir)
+        if key in index:
+            index[key]['height'] = entry['height']
+            save_download_index(output_dir, index)
+
+    height = entry.get('height') or 0
+    if height:
+        print(f'Quality:    {height}p')
     print(f'Match:      same video + same format ({entry.get("format", format_choice)}) '
           f'+ same range ({"whole video" if section == "full" else section + " s"})')
-    print('\nUse --force-download to download it again anyway.')
+    warning = low_quality_warning(height)
+    if warning:
+        print(f'\n⚠️  Heads-up: {warning}.')
+        print('   Run with --force-download to try for a better version.')
+    else:
+        print('\nUse --force-download to download it again anyway.')
     print('=' * 70)
     return path, key
 
@@ -2212,6 +2259,19 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                 print('   Use --force-download (or a different --output-dir) to fetch a '
                       'fresh copy.')
                 return
+        # Pobranie mogło „się udać" dopiero na strategii awaryjnej, w gorszej
+        # jakości. Bez tego ostrzeżenia taki plik trafia do indeksu i przy
+        # kolejnych uruchomieniach film jest cicho pomijany jako pobrany.
+        if format_choice == 'mp4':
+            warning = low_quality_warning(media_height(final_path))
+            if warning:
+                print('\n' + '=' * 70)
+                print(f'⚠️  QUALITY WARNING: {warning}.')
+                print('=' * 70)
+                print('When the throttling passes, get a better copy with:')
+                print(f'   ytsubtran "{url}" --force-download')
+                print('=' * 70)
+
         record_download(output_dir, dup_key, video_id_from_url(url), url,
                         final_path, format_choice, section_args)
 

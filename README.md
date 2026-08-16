@@ -231,6 +231,9 @@ What makes it trustworthy:
 - **Format and range are part of the match**: an MP3 is not a duplicate of an MP4,
   and a `--start/--end` fragment is never mistaken for the full video (fragments
   also get their range in the file name, e.g. `… [5-12s].mp4`).
+- **Quality is part of the picture.** The stored resolution is shown on every skip,
+  and anything below 720p is flagged — when YouTube throttling forces a fallback
+  format (360p), you are told instead of having that copy silently accepted forever.
 - **The file must really be there.** If it was deleted, moved or left incomplete
   (`.part`), the script says so and downloads it again instead of silently skipping.
 - **Files the index doesn't know** (e.g. from older runs) are verified by comparing

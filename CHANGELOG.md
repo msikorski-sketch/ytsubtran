@@ -44,6 +44,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the same name (previously yt-dlp skipped the second one as "already downloaded").
 
 ### Fixed
+- **A throttled download no longer locks in a bad copy silently.** When YouTube
+  blocks the good formats, the strategy chain can succeed on a fallback like format
+  18 (360p) — and that file was then recorded as "downloaded", so every later run
+  skipped the video and the full-quality version was never fetched. The resolution is
+  now stored in the index, printed in the "already downloaded" message, and anything
+  below 720p triggers an explicit warning with the `--force-download` hint, both right
+  after such a download and on every later skip (entries saved before this change are
+  filled in on the fly).
 - **Skipping a duplicate no longer rewrites the file.** The "already downloaded" path
   ran the Resolve remux again on every run, rewriting a several-hundred-megabyte MP4
   for nothing (and changing the size recorded in the index). The remux now happens

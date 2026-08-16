@@ -844,3 +844,25 @@ def test_take_new_links_ignores_text_without_links():
     seen = set()
     assert yt.take_new_links("nothing to see here", seen) == []
     assert seen == set()
+
+
+# ---------------------------------------------------------------------------
+# low_quality_warning — do not silently lock in a fallback-quality copy
+# ---------------------------------------------------------------------------
+
+def test_low_quality_warning_flags_fallback_formats():
+    # Throttled sessions fall back to format 18 (360p); that must be visible,
+    # otherwise the duplicate index skips the video forever at that quality.
+    assert '360p' in yt.low_quality_warning(360)
+    assert yt.low_quality_warning(480)
+
+
+def test_low_quality_warning_silent_for_good_quality():
+    assert yt.low_quality_warning(720) == ''
+    assert yt.low_quality_warning(1080) == ''
+    assert yt.low_quality_warning(2160) == ''
+
+
+def test_low_quality_warning_silent_when_unknown():
+    assert yt.low_quality_warning(0) == ''
+    assert yt.low_quality_warning(None) == ''
