@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Speed limit** (`--limit-rate 5M`) and **exponential retry backoff**: YouTube
+  throttles long, fast download sessions, answering with HTTP 503 and broken
+  transfers. Retries now wait 2 s, 4 s, 8 s … up to a minute instead of firing
+  immediately (which burned all 10 attempts within seconds and killed the download),
+  the retry budget went from 10 to 20 (plus 5 extractor retries), and `--limit-rate`
+  keeps the transfer at a steady pace — often faster overall than 100 MB/s bursts
+  followed by retry storms.
 - **Clipboard watch mode** (`--watch-clipboard`, `--watch-interval`): leave it
   running and every YouTube link you copy downloads by itself, using the same options
   as a normal run (`--resolve`, `--subs`, `--output-dir`...). The clipboard is watched
@@ -37,6 +44,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the same name (previously yt-dlp skipped the second one as "already downloaded").
 
 ### Fixed
+- **Skipping a duplicate no longer rewrites the file.** The "already downloaded" path
+  ran the Resolve remux again on every run, rewriting a several-hundred-megabyte MP4
+  for nothing (and changing the size recorded in the index). The remux now happens
+  only for a freshly downloaded file; `--resolve` still re-checks the codecs, which
+  costs one ffprobe call.
 - **"New link downloads an old video"**: the downloaded-file detection no longer
   guesses from directory listings and modification times (which could point at an
   older file after playlist walks, re-downloads or interrupted runs) — yt-dlp now

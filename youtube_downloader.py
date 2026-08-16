@@ -896,8 +896,15 @@ def format_timestamp_srt(seconds):
 # na typowe problemy (sieć, blokady regionalne, przerwane transfery, playlisty).
 COMMON_YTDLP_FLAGS = [
     '--no-playlist',            # nie pobieraj całej playlisty, gdy URL ma &list=
-    '--retries', '10',          # ponów próby przy błędach sieci
-    '--fragment-retries', '10', # ponów pobieranie pojedynczych fragmentów
+    '--retries', '20',          # ponów próby przy błędach sieci
+    '--fragment-retries', '20', # ponów pobieranie pojedynczych fragmentów
+    '--extractor-retries', '5', # ponów też samo pobranie metadanych
+    # Odstępy między ponowieniami rosną wykładniczo (2 s → 4 → 8 ... do minuty).
+    # Bez tego yt-dlp ponawia NATYCHMIAST i przy dławieniu ruchu przez YouTube
+    # (HTTP 503, urwane transfery) tylko dokłada się do problemu — seria prób
+    # wypala się w kilka sekund i pobieranie pada.
+    '--retry-sleep', 'http:exp=2:60',
+    '--retry-sleep', 'fragment:exp=2:60',
     '--socket-timeout', '30',   # nie zawieszaj się w nieskończoność
     '--continue',               # wznawiaj przerwane pobierania (pliki .part)
     # Oficjalny skrypt yt-dlp rozwiązujący wyzwania JS YouTube'a (wymaga
@@ -1929,7 +1936,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      burn=False, embed=False, inserts_opts=None, section_args=None,
                      engine='auto', qwen_model=None,
                      translate_engine='google', translate_model='gemini-2.5-flash',
-                     resolve=False, force_download=False):
+                     resolve=False, force_download=False, limit_rate=None):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -1989,7 +1996,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                     initial_prompt=initial_prompt, also_vtt=also_vtt, burn=burn,
                     embed=embed, engine=engine, qwen_model=qwen_model,
                     translate_engine=translate_engine, translate_model=translate_model,
-                    inserts_opts=inserts_opts,
+                    inserts_opts=inserts_opts, fresh_download=False,
                 )
                 # Normalizacja (--resolve) mogła zmienić plik/rozmiar — odśwież wpis.
                 if final_path:
@@ -2071,6 +2078,16 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
     else:
         print('Unsupported format.')
         return
+
+    # Ograniczenie prędkości: YouTube dławi ruch przy długich, szybkich seriach
+    # pobierań (nagłe HTTP 503 i urwane transfery). Spokojne tempo bywa w sumie
+    # SZYBSZE niż zrywy po 100 MB/s przeplatane ponowieniami.
+    if limit_rate:
+        strategies = [
+            (spec, name, list(extra or []) + ['--limit-rate', str(limit_rate)])
+            for spec, name, extra in strategies
+        ]
+        print(f'🐢 Speed limit: {limit_rate} (helps avoid YouTube throttling)')
 
     # --force-download: yt-dlp samo pomija pliki o istniejącej nazwie, więc żeby
     # wymuszenie faktycznie coś zrobiło, każemy mu nadpisać plik.
@@ -2202,11 +2219,17 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 def _post_process_download(final_path, url, output_dir, format_choice, resolve,
                            generate_subs, whisper_model, source_lang, translate_to,
                            initial_prompt, also_vtt, burn, embed, engine, qwen_model,
-                           translate_engine, translate_model, inserts_opts):
+                           translate_engine, translate_model, inserts_opts,
+                           fresh_download=True):
     """
     Kroki po pobraniu, wspólne dla świeżo pobranego pliku i dla pliku, który już
     był na dysku (wykryty duplikat): remux/preset DaVinci, napisy, inserty.
     Zwraca finalną ścieżkę pliku (może się zmienić przy normalizacji --resolve).
+
+    `fresh_download=False` znaczy, że plik pochodzi z wcześniejszego pobrania
+    (wykryty duplikat) — remux został wtedy już zrobiony, więc pomijamy go.
+    Przepisywanie kilkusetmegabajtowego pliku przy każdym uruchomieniu byłoby
+    czystą stratą czasu (i zmieniałoby rozmiar zapisany w indeksie).
     """
     # Make every MP4 we hand off downstream readable by DaVinci Resolve (free):
     # stream-copy remux that drops edit lists, fixes negative timestamps and
@@ -2214,9 +2237,11 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
     # downloads (--start/--end), where yt-dlp leaves an edit-list MP4 that
     # Resolve mis-syncs.
     if final_path and format_choice == 'mp4':
-        final_path = remux_for_resolve(final_path)
+        if fresh_download:
+            final_path = remux_for_resolve(final_path)
         # Preset DaVinci: zweryfikuj kodeki i znormalizuj plik tylko w razie
         # potrzeby (np. VP9/Opus po strategii awaryjnej, materiał 10-bit).
+        # Dla pliku z wcześniejszego pobrania to tylko szybka kontrola ffprobe.
         if resolve:
             final_path = ensure_resolve_ready(final_path, in_place=True)
 
@@ -2514,6 +2539,7 @@ def build_download_options(args, inserts_opts=None, section_args=None):
         translate_model=args.translate_model,
         resolve=args.resolve,
         force_download=args.force_download,
+        limit_rate=args.limit_rate,
     )
 
 
@@ -2678,6 +2704,15 @@ Examples:
         '--watch-interval',
         type=float, default=1.0, metavar='SEC',
         help='How often to check the clipboard in --watch-clipboard mode (default: 1 s).'
+    )
+    parser.add_argument(
+        '--limit-rate',
+        default=None,
+        metavar='RATE',
+        help='Cap the download speed, e.g. 5M or 800K. YouTube throttles long, fast '
+             'download sessions (sudden HTTP 503 and broken transfers), so a steady '
+             'pace is often faster overall than 100 MB/s bursts followed by retries. '
+             'Worth using when downloading many videos in a row.'
     )
     parser.add_argument(
         '--force-download',

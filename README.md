@@ -84,6 +84,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Choose where files are saved | `--output-dir "C:\downloads"` |
 | Save a default output folder (persists) | `--set-output-dir "D:\edit"` |
 | Re-download something already fetched | `--force-download` |
+| Avoid YouTube throttling (503s) | `--limit-rate 5M` |
 | Download whatever you copy (watch mode) | `--watch-clipboard` |
 | Also export WebVTT subtitles | `--vtt` |
 | Burn subtitles into the video | `--burn` |

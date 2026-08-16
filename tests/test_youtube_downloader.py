@@ -804,7 +804,7 @@ def test_build_download_options_matches_download_youtube_signature():
         prompt=None, cookies_from_browser=None, output_dir='D:/out', vtt=False,
         burn=False, embed=False, engine='auto', qwen_model=None,
         translate_engine='google', translate_model='gemini-2.5-flash',
-        resolve=True, force_download=False,
+        resolve=True, force_download=False, limit_rate='5M',
     )
     section = ['--download-sections', '*5.000-10.000']
     opts = yt.build_download_options(args, inserts_opts=None, section_args=section)
