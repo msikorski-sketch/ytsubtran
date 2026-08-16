@@ -200,8 +200,8 @@ ytsubtran --watch-clipboard --resolve --subs --translate-to pl
   list of posts (e.g. in Discord), hit Ctrl+C once, and get all of them.
 - Understands `watch?v=`, `youtu.be`, `shorts`, `live` and `embed` links, and drops
   duplicates within the same copy.
-- Whatever is in the clipboard **before** you start is left alone — only new copies
-  trigger a download.
+- Whatever is in the clipboard **before** you start is left alone — copy it again and
+  it downloads (on Windows even an identical re-copy is detected).
 - Each video is handled once per session, and the duplicate detection below keeps
   re-runs from downloading anything twice.
 - A failed download does not stop the queue; on Ctrl+C anything still queued is

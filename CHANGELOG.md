@@ -44,6 +44,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the same name (previously yt-dlp skipped the second one as "already downloaded").
 
 ### Fixed
+- **Clipboard watch mode now reacts to re-copying the same link.** Detection compared
+  clipboard *text*, so copying a link that was already in the clipboard (the usual
+  case right after starting the mode, which deliberately ignores what it finds there)
+  looked like "nothing happened" and was silently missed. On Windows the clipboard
+  change counter (`GetClipboardSequenceNumber`) is now used as well, which ticks on
+  every copy even when the text is identical; other systems keep the text comparison.
+  The clipboard is also read on every poll — that is what keeps the counter fresh —
+  and a copy that momentarily reads back empty (another app still holding the
+  clipboard) is retried instead of being dropped.
 - **A throttled download no longer locks in a bad copy silently.** When YouTube
   blocks the good formats, the strategy chain can succeed on a fallback like format
   18 (360p) — and that file was then recorded as "downloaded", so every later run

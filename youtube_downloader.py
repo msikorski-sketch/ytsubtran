@@ -2463,6 +2463,22 @@ def take_new_links(text, seen):
     return fresh
 
 
+def _clipboard_change_token():
+    """
+    Licznik zmian schowka Windows (GetClipboardSequenceNumber) albo None na
+    innych systemach.
+
+    Po co: rośnie przy KAŻDYM skopiowaniu, nawet gdy tekst jest identyczny.
+    Bez niego ponowne skopiowanie tego samego linku (np. tego, który już leżał
+    w schowku przy starcie) wygląda jak „brak zmiany" i nic się nie dzieje.
+    """
+    try:
+        import ctypes
+        return int(ctypes.windll.user32.GetClipboardSequenceNumber())
+    except Exception:
+        return None
+
+
 def _clipboard_producer(pending, stop_event, interval, failure):
     """
     Wątek nasłuchu: obserwuje schowek i dokłada nowe linki do kolejki `pending`.
@@ -2483,15 +2499,33 @@ def _clipboard_producer(pending, stop_event, interval, failure):
     # wyłącznie na nowe kopiowanie. Inaczej samo uruchomienie trybu ściągałoby
     # przypadkowy link skopiowany wcześniej, w innym celu.
     last_text = read_clipboard() or ''
+    last_token = _clipboard_change_token()
     if extract_youtube_links(last_text):
-        print('\nℹ️  Your clipboard already holds a link — leaving it alone '
-              '(copy something else and it again if you do want it).')
+        print('\nℹ️  Your clipboard already holds a link — ignoring it for now '
+              '(copy it again and it will download).')
     print('\n👀 Watching the clipboard... (Ctrl+C to stop)')
 
     while not stop_event.is_set():
+        # Czytamy schowek w KAŻDYM obiegu — to również odświeża licznik zmian
+        # (bez tego zostaje on zamrożony na wartości z chwili startu).
         text = read_clipboard() or ''
-        if text and text != last_text:
+        token = _clipboard_change_token()
+        # Zmiana = inny tekst ALBO wzrost licznika. Ten drugi warunek łapie
+        # ponowne skopiowanie DOKŁADNIE tego samego linku — bez niego wygląda
+        # to jak „nic się nie stało" i nasłuch milczy.
+        changed = (text != last_text) or (token is not None and token != last_token)
+
+        if changed:
+            # Tuż po skopiowaniu schowek bywa przez moment pusty (inna aplikacja
+            # wciąż go trzyma) — daj mu chwilę, zanim uznamy, że nie ma tekstu.
+            for _ in range(3):
+                if text:
+                    break
+                stop_event.wait(0.2)
+                text = read_clipboard() or ''
             last_text = text
+            last_token = _clipboard_change_token()
+
             for url in take_new_links(text, seen):
                 pending.put(url)
                 waiting = pending.qsize()

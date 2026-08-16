@@ -866,3 +866,14 @@ def test_low_quality_warning_silent_for_good_quality():
 def test_low_quality_warning_silent_when_unknown():
     assert yt.low_quality_warning(0) == ''
     assert yt.low_quality_warning(None) == ''
+
+
+def test_clipboard_change_token_is_safe_everywhere():
+    """
+    Windows-only API (GetClipboardSequenceNumber) used to spot a re-copy of the
+    very same text. Must degrade to None elsewhere — CI runs on Linux.
+    """
+    token = yt._clipboard_change_token()
+    assert token is None or isinstance(token, int)
+    # stable across calls when the clipboard does not change
+    assert yt._clipboard_change_token() == token or token is None
