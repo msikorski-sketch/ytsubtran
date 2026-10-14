@@ -466,6 +466,31 @@ def test_plan_vfr_forces_video_reencode():
     assert plan['target'] == 'h264'
 
 
+def test_plan_linux_h264_aac_goes_dnxhr_pcm():
+    # Free Resolve on Linux decodes neither H.264 nor AAC
+    plan = yt.resolve_transcode_plan('h264', 'yuv420p', 'aac', linux=True)
+    assert plan['target'] == 'dnxhr'
+    assert plan['video'] is True
+    assert plan['audio'] is True
+
+
+def test_plan_linux_dnxhr_pcm_needs_nothing():
+    plan = yt.resolve_transcode_plan('dnxhd', 'yuv422p', 'pcm_s16le', linux=True)
+    assert plan['video'] is False
+    assert plan['audio'] is False
+
+
+def test_plan_linux_prores_with_aac_only_fixes_audio():
+    plan = yt.resolve_transcode_plan('prores', 'yuv422p10le', 'aac', linux=True)
+    assert plan['video'] is False
+    assert plan['audio'] is True
+
+
+def test_plan_linux_vfr_forces_reencode_even_for_intra_codec():
+    plan = yt.resolve_transcode_plan('dnxhd', 'yuv422p', 'pcm_s16le', vfr=True, linux=True)
+    assert plan['video'] is True
+
+
 def test_plan_no_audio_track():
     plan = yt.resolve_transcode_plan('av1', 'yuv420p', None)
     assert plan['audio'] is False
@@ -804,7 +829,8 @@ def test_build_download_options_matches_download_youtube_signature():
         prompt=None, cookies_from_browser=None, output_dir='D:/out', vtt=False,
         burn=False, embed=False, engine='auto', qwen_model=None,
         translate_engine='google', translate_model='gemini-2.5-flash',
-        resolve=True, force_download=False, limit_rate='5M',
+        resolve=True, resolve_linux=False, force_download=False, limit_rate='5M',
+        dnxhr_profile='lb',
     )
     section = ['--download-sections', '*5.000-10.000']
     opts = yt.build_download_options(args, inserts_opts=None, section_args=section)

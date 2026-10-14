@@ -78,6 +78,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Auto-detect spoken language | `... --source-lang auto` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
 | Guarantee smooth editing in DaVinci Resolve | `--resolve` (also with `--file`) |
+| Same for free DaVinci Resolve on Linux (DNxHR + PCM) | `--resolve-linux` |
 | Pick a Whisper model | `--model turbo` (or `large-v3`, `medium`, …) |
 | Improve accuracy with context | `--prompt "Pomni, Ragatha, Jax, Caine"` |
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
@@ -270,6 +271,25 @@ just edit:
 3. Works for local files too: `--file "clip.mp4" --resolve` writes a sibling
    `clip_resolve.*` and leaves the original untouched; subtitles generated in the
    same run are named after the Resolve-ready file, so Resolve matches them.
+
+### Free DaVinci Resolve on Linux (`--resolve-linux`)
+
+The free Linux build of Resolve has no H.264/H.265 or AAC decoders, so even the
+H.264+AAC files from `--resolve` import as offline media or without sound.
+`--resolve-linux` converts the video to **DNxHR** with **PCM audio** in a sibling
+`*_resolve.mov`; DNxHR/ProRes/CineForm with PCM is left as is. 8-bit sources use
+the `--dnxhr-profile` (default `lb`), 10-bit sources always get HQX:
+
+| `--dnxhr-profile` | 1080p30 size | When |
+|---|---|---|
+| `lb` (default) | ≈ 0.35 GB/min | YouTube and other compressed sources |
+| `sq` | ≈ 1 GB/min | higher-quality sources |
+| `hq` | ≈ 1.6 GB/min | camera originals, heavy grading |
+
+```bash
+ytsubtran "URL" --resolve-linux
+ytsubtran --file clip.mp4 --resolve-linux --dnxhr-profile sq
+```
 
 ## 💡 Getting the best quality
 
