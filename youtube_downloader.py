@@ -2792,6 +2792,19 @@ def build_download_options(args, inserts_opts=None, section_args=None):
     )
 
 
+def file_wants_subs(args, inserts_opts):
+    """Czy tryb --file ma generować napisy.
+
+    Jawne --subs/--translate-to zawsze tak. Bez nich napisy są domyślną akcją
+    --file tylko wtedy, gdy nie poproszono o nic innego: samo wykrywanie
+    insertów albo sama konwersja dla Resolve (--resolve/--resolve-linux)
+    nie uruchamia rozpoznawania mowy.
+    """
+    if args.subs or args.translate_to:
+        return True
+    return inserts_opts is None and not (args.resolve or args.resolve_linux)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Download from YouTube as mp4 or mp3 with automatic error workarounds.',
@@ -2886,9 +2899,10 @@ Examples:
     )
     parser.add_argument(
         '--source-lang',
-        default='pl',
-        help='Spoken language of the audio, e.g. es, en, de (default: pl). '
-             'Use "auto" to let Whisper detect the language automatically.'
+        default='auto',
+        help='Spoken language of the audio, e.g. pl, es, en, de (default: auto — '
+             'detected from several samples, skipping the intro). Set it explicitly '
+             'for dubbed videos or when detection guesses wrong.'
     )
     parser.add_argument(
         '--translate-to',
@@ -3278,9 +3292,7 @@ Examples:
             args.file = ensure_resolve_ready(args.file, in_place=False,
                                              linux=args.resolve_linux,
                                              dnxhr_profile=args.dnxhr_profile)
-        # Generate subtitles unless the user asked ONLY for insert detection
-        wants_subs = args.subs or bool(args.translate_to) or inserts_opts is None
-        if wants_subs:
+        if file_wants_subs(args, inserts_opts):
             generate_subtitles(args.file, args.model, args.source_lang,
                                args.translate_to, args.prompt, args.output_dir,
                                args.vtt, args.burn, args.embed,

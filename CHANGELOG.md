@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **`--source-lang` now defaults to `auto`** instead of `pl`. Forcing Polish on
+  English audio made Whisper produce gibberish; the language is now detected from
+  several samples (skipping the intro). Pass `--source-lang` to force it.
+- **`--file` with `--resolve`/`--resolve-linux` only converts** the file. Subtitles
+  are generated only with `--subs` or `--translate-to` (a bare `--file` still
+  generates them, as before).
+
 ### Added
 - **`--resolve-linux`** — DaVinci preset for the free Resolve on Linux, which cannot
   decode H.264/H.265 or AAC. Converts the video to DNxHR + PCM audio in a sibling

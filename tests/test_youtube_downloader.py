@@ -6,6 +6,9 @@ at import time (whisper/torch/yt-dlp are imported lazily inside functions), so t
 tests run fast and without the heavy dependencies installed.
 """
 import os
+import sys
+
+import pytest
 
 import youtube_downloader as yt
 
@@ -954,3 +957,46 @@ def test_persistent_queue_get_returns_none_when_empty(tmp_path):
     q = yt.PersistentQueue(str(tmp_path))
     assert q.get(timeout=0.05) is None
     assert q.empty() is True
+
+
+def _file_args(**overrides):
+    import argparse
+    base = dict(subs=False, translate_to=None, resolve=False, resolve_linux=False)
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def test_file_wants_subs_by_default():
+    assert yt.file_wants_subs(_file_args(), inserts_opts=None)
+
+
+def test_file_resolve_conversion_alone_skips_subs():
+    """--file X --resolve-linux used to run Whisper too and leave garbage .srt files."""
+    assert not yt.file_wants_subs(_file_args(resolve_linux=True), inserts_opts=None)
+    assert not yt.file_wants_subs(_file_args(resolve=True), inserts_opts=None)
+
+
+def test_file_explicit_subs_or_translation_wins():
+    assert yt.file_wants_subs(_file_args(resolve_linux=True, subs=True), inserts_opts=None)
+    assert yt.file_wants_subs(_file_args(resolve=True, translate_to='pl'), inserts_opts=None)
+    assert yt.file_wants_subs(_file_args(subs=True), inserts_opts={'find': True})
+
+
+def test_file_inserts_alone_skips_subs():
+    assert not yt.file_wants_subs(_file_args(), inserts_opts={'find': True})
+
+
+def test_source_lang_defaults_to_auto(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(sys, 'argv', ['ytsubtran', '--file', 'missing.mp4'])
+    monkeypatch.setattr(yt.os.path, 'exists', lambda p: False)
+    real_parse = yt.argparse.ArgumentParser.parse_args
+
+    def spy(self, *a, **kw):
+        ns = real_parse(self, *a, **kw)
+        seen['lang'] = ns.source_lang
+        return ns
+    monkeypatch.setattr(yt.argparse.ArgumentParser, 'parse_args', spy)
+    with pytest.raises(SystemExit):
+        yt.main()
+    assert seen['lang'] == 'auto'

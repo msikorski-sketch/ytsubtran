@@ -75,7 +75,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Cross-check Whisper with Qwen (any language) | `... --subs --engine hybrid` |
 | Translate subtitles → Polish | `... --subs --source-lang es --translate-to pl` |
 | Context-aware LLM translation (Gemini) | `... --translate-to pl --translate-engine gemini` |
-| Auto-detect spoken language | `... --source-lang auto` |
+| Force the spoken language (default: auto-detect) | `... --source-lang en` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
 | Guarantee smooth editing in DaVinci Resolve | `--resolve` (also with `--file`) |
 | Same for free DaVinci Resolve on Linux (DNxHR + PCM) | `--resolve-linux` |
@@ -269,8 +269,9 @@ just edit:
      Windows decodes H.264 only in 8-bit, and DNxHR keeps the full bit depth
      (bigger file, perfect scrubbing).
 3. Works for local files too: `--file "clip.mp4" --resolve` writes a sibling
-   `clip_resolve.*` and leaves the original untouched; subtitles generated in the
-   same run are named after the Resolve-ready file, so Resolve matches them.
+   `clip_resolve.*` and leaves the original untouched. On its own it only
+   converts; add `--subs` (or `--translate-to`) to also generate subtitles, which
+   are then named after the Resolve-ready file, so Resolve matches them.
 
 ### Free DaVinci Resolve on Linux (`--resolve-linux`)
 
@@ -293,7 +294,7 @@ ytsubtran --file clip.mp4 --resolve-linux --dnxhr-profile sq
 
 ## 💡 Getting the best quality
 
-1. **Set the correct language** (`--source-lang`) — the #1 cause of bad subtitles is wrong language detection on dubbed content.
+1. **Set the correct language** (`--source-lang`) — it is auto-detected by default, but the #1 cause of bad subtitles is wrong detection on dubbed content.
 2. **Use Qwen3-ASR** (`--engine qwen`, or `hybrid` for Polish) — more accurate than Whisper.
 3. **Use a bigger model** — `turbo` or `large-v3` (Whisper), `Qwen3-ASR-1.7B` (Qwen, default).
 4. **Add `--prompt`** with character names / terminology (in the spoken language) — biases both engines.
