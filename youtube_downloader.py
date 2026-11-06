@@ -1243,6 +1243,51 @@ def _is_high_depth(pix_fmt):
 # Kodeki śródklatkowe, które darmowy Resolve na Linuksie dekoduje natywnie
 LINUX_RESOLVE_VCODECS = ('dnxhd', 'prores', 'cfhd')
 
+# Kodeki docelowe --resolve-linux (--linux-codec): nazwa → (ffmpeg -c:v,
+# -profile:v, przybliżony rozmiar 1080p30 w GB/min). ProRes jest zawsze
+# 10-bit 4:2:2, więc ten sam profil obsługuje źródła 8- i 10-bitowe.
+LINUX_CODECS = {
+    'prores-proxy': ('prores_ks', '0', 0.35),
+    'prores-lt': ('prores_ks', '1', 0.75),
+    'prores': ('prores_ks', '2', 1.1),
+    'prores-hq': ('prores_ks', '3', 1.6),
+    'dnxhr-lb': ('dnxhd', 'dnxhr_lb', 0.35),
+    'dnxhr-sq': ('dnxhd', 'dnxhr_sq', 1.0),
+    'dnxhr-hq': ('dnxhd', 'dnxhr_hq', 1.6),
+}
+DEFAULT_LINUX_CODEC = 'prores-lt'
+
+
+def linux_video_args(linux_codec, pix_fmt):
+    """
+    Argumenty ffmpeg dla wideo w presecie --resolve-linux (czysta funkcja).
+
+    ProRes: wybrany profil, zawsze yuv422p10le (ProRes nie ma wariantu
+    8-bitowego, więc 10-bitowe źródło nie traci głębi). DNxHR: profile
+    LB/SQ/HQ są 8-bitowe, dlatego 10-bitowe źródło dostaje HQX.
+    """
+    encoder, profile, _ = LINUX_CODECS[linux_codec]
+    if encoder == 'prores_ks':
+        return ['-c:v', 'prores_ks', '-profile:v', profile,
+                '-vendor', 'apl0', '-pix_fmt', 'yuv422p10le']
+    if _is_high_depth(pix_fmt):
+        return ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hqx', '-pix_fmt', 'yuv422p10le']
+    return ['-c:v', 'dnxhd', '-profile:v', profile, '-pix_fmt', 'yuv422p']
+
+
+def effective_linux_codec(args):
+    """
+    Kodek dla --resolve-linux z argumentów CLI: --linux-codec wygrywa,
+    starsze --dnxhr-profile X mapuje się na dnxhr-X, domyślnie ProRes LT.
+    """
+    codec = getattr(args, 'linux_codec', None)
+    if codec:
+        return codec
+    legacy = getattr(args, 'dnxhr_profile', None)
+    if legacy:
+        return f'dnxhr-{legacy}'
+    return DEFAULT_LINUX_CODEC
+
 
 def resolve_transcode_plan(vcodec, pix_fmt, acodec, vfr=False, linux=False):
     """
@@ -1261,24 +1306,28 @@ def resolve_transcode_plan(vcodec, pix_fmt, acodec, vfr=False, linux=False):
 
     `linux=True` (--resolve-linux): darmowy Resolve na Linuksie nie ma
     licencji na H.264/H.265/AAC — wszystko poza DNxHR/ProRes/CineForm idzie
-    do DNxHR (HQ dla 8-bit, HQX dla 10-bit) w MOV, a audio poza PCM → PCM.
+    do kodeka montażowego w MOV (ProRes LT domyślnie, patrz --linux-codec),
+    a audio poza PCM → PCM.
 
-    Zwraca {'video': bool, 'audio': bool, 'target': 'h264'|'dnxhr',
-            'reasons': [str, ...]}.
+    Zwraca {'video': bool, 'audio': bool,
+            'target': 'h264'|'dnxhr'|'intermediate', 'reasons': [str, ...]}.
+    'dnxhr' = DNxHR HQX (10-bit, --resolve); 'intermediate' = kodek z
+    --linux-codec (--resolve-linux). Oba lądują w MOV z audio PCM.
     """
     reasons = []
     if linux:
         video = vcodec not in LINUX_RESOLVE_VCODECS or vfr
         if vcodec not in LINUX_RESOLVE_VCODECS:
-            reasons.append(f'video codec "{vcodec}" → DNxHR (free Resolve on Linux '
-                           'decodes no H.264/HEVC/VP9/AV1)')
+            reasons.append(f'video codec "{vcodec}" → editing codec (free Resolve on '
+                           'Linux decodes no H.264/HEVC/VP9/AV1)')
         elif vfr:
             reasons.append('variable frame rate → constant (CFR) — VFR drifts audio in Resolve')
         audio = acodec is not None and not str(acodec).startswith('pcm_')
         if audio:
             reasons.append(f'audio "{acodec}" → PCM 16-bit (free Resolve on Linux '
                            'decodes no AAC)')
-        return {'video': video, 'audio': audio, 'target': 'dnxhr', 'reasons': reasons}
+        return {'video': video, 'audio': audio, 'target': 'intermediate',
+                'reasons': reasons}
 
     target = 'dnxhr' if _is_high_depth(pix_fmt) else 'h264'
 
@@ -1367,7 +1416,8 @@ def low_quality_warning(height, threshold=720):
             'better ones were unavailable (YouTube throttling?)')
 
 
-def ensure_resolve_ready(path, in_place=True, linux=False, dnxhr_profile='lb'):
+def ensure_resolve_ready(path, in_place=True, linux=False,
+                         linux_codec=DEFAULT_LINUX_CODEC):
     """
     Preset DaVinci Resolve: gwarantuje plik, który darmowy Resolve na Windows
     otwiera z pełnym obrazem i dźwiękiem (H.264 8-bit 4:2:0, CFR, AAC, MP4).
@@ -1379,8 +1429,8 @@ def ensure_resolve_ready(path, in_place=True, linux=False, dnxhr_profile='lb'):
     oryginał (tryb --file). Zwraca ścieżkę pliku zdatnego dla Resolve.
 
     `linux=True` (--resolve-linux): cel to darmowy Resolve na Linuksie —
-    DNxHR + PCM w MOV (zawsze nowy plik <nazwa>_resolve.mov obok).
-    `dnxhr_profile` (lb/sq/hq) dotyczy 8-bitowych źródeł; 10-bit zawsze HQX.
+    kodek montażowy + PCM w MOV (zawsze nowy plik <nazwa>_resolve.mov obok).
+    `linux_codec` to klucz LINUX_CODECS (domyślnie prores-lt).
     """
     if not path or not os.path.exists(path):
         return path
@@ -1409,8 +1459,9 @@ def ensure_resolve_ready(path, in_place=True, linux=False, dnxhr_profile='lb'):
         print(f'   • {reason}')
 
     base = os.path.splitext(path)[0]
-    if plan['target'] == 'dnxhr':
-        # DNxHR żyje w kontenerze MOV — zawsze nowy plik obok (inne rozszerzenie)
+    mov_target = plan['target'] in ('dnxhr', 'intermediate')
+    if mov_target:
+        # ProRes/DNxHR żyją w kontenerze MOV — zawsze nowy plik obok (inne rozszerzenie)
         out = f'{base}_resolve.mov'
         tmp = out
         in_place = False
@@ -1422,16 +1473,13 @@ def ensure_resolve_ready(path, in_place=True, linux=False, dnxhr_profile='lb'):
         tmp = out
 
     cmd = ['ffmpeg', '-y', '-i', path, '-map', '0:v:0', '-map', '0:a:0?']
-    if plan['target'] == 'dnxhr':
+    if mov_target:
         if not plan['video']:
             cmd += ['-c:v', 'copy']
-        elif _is_high_depth(info['pix_fmt']):
-            cmd += ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hqx', '-pix_fmt', 'yuv422p10le']
+        elif plan['target'] == 'intermediate':
+            cmd += linux_video_args(linux_codec, info['pix_fmt'])
         else:
-            # 8-bit źródło (--resolve-linux): LB domyślnie — materiał z YouTube
-            # jest już mocno skompresowany, HQ tylko pięciokrotnie puchnie plik
-            cmd += ['-c:v', 'dnxhd', '-profile:v', f'dnxhr_{dnxhr_profile}',
-                    '-pix_fmt', 'yuv422p']
+            cmd += ['-c:v', 'dnxhd', '-profile:v', 'dnxhr_hqx', '-pix_fmt', 'yuv422p10le']
         cmd += ['-c:a', 'pcm_s16le'] if plan['audio'] else ['-c:a', 'copy']
     else:
         if plan['video']:
@@ -1465,10 +1513,14 @@ def ensure_resolve_ready(path, in_place=True, linux=False, dnxhr_profile='lb'):
             os.replace(tmp, out)
         except OSError:
             return tmp
-    if plan['target'] == 'dnxhr':
-        print('   ℹ️  DNxHR is an editing (intra-frame) codec — the file is much '
-              'larger than the source (1080p30: LB ≈ 0.35 GB/min, HQ ≈ 1.6 GB/min), '
+    if plan['target'] == 'intermediate' and plan['video']:
+        gb_min = LINUX_CODECS[linux_codec][2]
+        print(f'   ℹ️  {linux_codec} is an editing (intra-frame) codec — the file is much '
+              f'larger than the source (≈ {gb_min} GB/min at 1080p30), '
               'but scrubs perfectly.')
+    elif plan['target'] == 'dnxhr':
+        print('   ℹ️  DNxHR is an editing (intra-frame) codec — the file is much '
+              'larger than the source, but scrubs perfectly.')
     print(f'✓ DaVinci preset: Resolve-ready file: {out}')
     return out
 
@@ -2022,7 +2074,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      engine='auto', qwen_model=None,
                      translate_engine='google', translate_model='gemini-2.5-flash',
                      resolve=False, force_download=False, limit_rate=None,
-                     dnxhr_profile='lb'):
+                     linux_codec=DEFAULT_LINUX_CODEC):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -2051,7 +2103,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
     print(f'Format: {format_choice}')
     if resolve == 'linux' and format_choice == 'mp4':
         print('DaVinci preset (Linux): ON — the file will be converted to '
-              'DNxHR + PCM (.mov) for free Resolve on Linux')
+              f'{linux_codec} + PCM (.mov) for free Resolve on Linux')
     elif resolve and format_choice == 'mp4':
         print('DaVinci preset: ON — preferring native H.264+AAC, then verifying '
               'codecs and normalizing only if needed')
@@ -2080,7 +2132,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                 final_path = _post_process_download(
                     existing_path, url=url, output_dir=output_dir,
                     format_choice=format_choice, resolve=resolve,
-                    dnxhr_profile=dnxhr_profile,
+                    linux_codec=linux_codec,
                     generate_subs=generate_subs, whisper_model=whisper_model,
                     source_lang=source_lang, translate_to=translate_to,
                     initial_prompt=initial_prompt, also_vtt=also_vtt, burn=burn,
@@ -2273,7 +2325,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
     final_path = _post_process_download(
         final_path, url=url, output_dir=output_dir, format_choice=format_choice,
-        resolve=resolve, dnxhr_profile=dnxhr_profile,
+        resolve=resolve, linux_codec=linux_codec,
         generate_subs=generate_subs, whisper_model=whisper_model,
         source_lang=source_lang, translate_to=translate_to, initial_prompt=initial_prompt,
         also_vtt=also_vtt, burn=burn, embed=embed, engine=engine, qwen_model=qwen_model,
@@ -2324,7 +2376,7 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
                            generate_subs, whisper_model, source_lang, translate_to,
                            initial_prompt, also_vtt, burn, embed, engine, qwen_model,
                            translate_engine, translate_model, inserts_opts,
-                           fresh_download=True, dnxhr_profile='lb'):
+                           fresh_download=True, linux_codec=DEFAULT_LINUX_CODEC):
     """
     Kroki po pobraniu, wspólne dla świeżo pobranego pliku i dla pliku, który już
     był na dysku (wykryty duplikat): remux/preset DaVinci, napisy, inserty.
@@ -2349,7 +2401,7 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
         if resolve:
             final_path = ensure_resolve_ready(final_path, in_place=True,
                                               linux=(resolve == 'linux'),
-                                              dnxhr_profile=dnxhr_profile)
+                                              linux_codec=linux_codec)
 
     # Subtitle generation (MP4 only)
     if generate_subs and format_choice == 'mp4':
@@ -2788,7 +2840,7 @@ def build_download_options(args, inserts_opts=None, section_args=None):
         resolve='linux' if args.resolve_linux else args.resolve,
         force_download=args.force_download,
         limit_rate=args.limit_rate,
-        dnxhr_profile=args.dnxhr_profile,
+        linux_codec=effective_linux_codec(args),
     )
 
 
@@ -2847,7 +2899,7 @@ Examples:
   # Make an existing local file Resolve-ready (writes <name>_resolve next to it):
   %(prog)s --file "C:\\videos\\clip.mp4" --resolve
 
-  # Free DaVinci Resolve on Linux (no H.264/AAC) — DNxHR + PCM in .mov:
+  # Free DaVinci Resolve on Linux (no H.264/AAC) — ProRes LT + PCM in .mov:
   %(prog)s "https://youtube.com/watch?v=..." --resolve-linux
         """
     )
@@ -3004,17 +3056,25 @@ Examples:
         '--resolve-linux',
         action='store_true',
         help='DaVinci Resolve preset for the FREE version on Linux, which cannot '
-             'decode H.264/H.265 or AAC. Converts the video to DNxHR (HQ for 8-bit, '
-             'HQX for 10-bit sources) + PCM audio in a sibling *_resolve.mov; '
-             'DNxHR/ProRes/CineForm with PCM is left as is. Also works with --file.'
+             'decode H.264/H.265 or AAC. Converts the video to an editing codec '
+             '(ProRes LT by default, see --linux-codec) + PCM audio in a sibling '
+             '*_resolve.mov; DNxHR/ProRes/CineForm with PCM is left as is. Also '
+             'works with --file.'
+    )
+    parser.add_argument(
+        '--linux-codec',
+        choices=list(LINUX_CODECS),
+        default=None,
+        help='Editing codec for --resolve-linux (default: prores-lt). Approx. size '
+             'at 1080p30: prores-proxy / dnxhr-lb ≈ 0.35 GB/min, prores-lt ≈ 0.75, '
+             'prores / dnxhr-sq ≈ 1-1.1, prores-hq / dnxhr-hq ≈ 1.6. ProRes is '
+             'always 10-bit 4:2:2; DNxHR switches to HQX for 10-bit sources.'
     )
     parser.add_argument(
         '--dnxhr-profile',
         choices=['lb', 'sq', 'hq'],
-        default='lb',
-        help='DNxHR profile for 8-bit sources with --resolve-linux (default: lb). '
-             'At 1080p30: lb ≈ 0.35 GB/min, sq ≈ 1 GB/min, hq ≈ 1.6 GB/min. lb is '
-             'plenty for YouTube sources; 10-bit sources always use HQX.'
+        default=None,
+        help='Deprecated alias: --dnxhr-profile X equals --linux-codec dnxhr-X.'
     )
     parser.add_argument(
         '--vtt',
@@ -3291,7 +3351,7 @@ Examples:
         if args.resolve or args.resolve_linux:
             args.file = ensure_resolve_ready(args.file, in_place=False,
                                              linux=args.resolve_linux,
-                                             dnxhr_profile=args.dnxhr_profile)
+                                             linux_codec=effective_linux_codec(args))
         if file_wants_subs(args, inserts_opts):
             generate_subtitles(args.file, args.model, args.source_lang,
                                args.translate_to, args.prompt, args.output_dir,

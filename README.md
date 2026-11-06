@@ -78,7 +78,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Force the spoken language (default: auto-detect) | `... --source-lang en` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
 | Guarantee smooth editing in DaVinci Resolve | `--resolve` (also with `--file`) |
-| Same for free DaVinci Resolve on Linux (DNxHR + PCM) | `--resolve-linux` |
+| Same for free DaVinci Resolve on Linux (ProRes LT + PCM) | `--resolve-linux` |
 | Pick a Whisper model | `--model turbo` (or `large-v3`, `medium`, …) |
 | Improve accuracy with context | `--prompt "Pomni, Ragatha, Jax, Caine"` |
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
@@ -277,19 +277,24 @@ just edit:
 
 The free Linux build of Resolve has no H.264/H.265 or AAC decoders, so even the
 H.264+AAC files from `--resolve` import as offline media or without sound.
-`--resolve-linux` converts the video to **DNxHR** with **PCM audio** in a sibling
-`*_resolve.mov`; DNxHR/ProRes/CineForm with PCM is left as is. 8-bit sources use
-the `--dnxhr-profile` (default `lb`), 10-bit sources always get HQX:
+`--resolve-linux` converts the video to an **editing (intra-frame) codec** with
+**PCM audio** in a sibling `*_resolve.mov`; DNxHR/ProRes/CineForm with PCM is left
+as is. The codec is chosen with `--linux-codec` (default **`prores-lt`**):
 
-| `--dnxhr-profile` | 1080p30 size | When |
+| `--linux-codec` | 1080p30 size | When |
 |---|---|---|
-| `lb` (default) | ≈ 0.35 GB/min | YouTube and other compressed sources |
-| `sq` | ≈ 1 GB/min | higher-quality sources |
-| `hq` | ≈ 1.6 GB/min | camera originals, heavy grading |
+| `prores-proxy`, `dnxhr-lb` | ≈ 0.35 GB/min | short on disk space, rough cuts |
+| `prores-lt` (default) | ≈ 0.75 GB/min | YouTube, phone and camera H.264 — visually transparent |
+| `prores`, `dnxhr-sq` | ≈ 1–1.1 GB/min | higher-quality sources, colour grading |
+| `prores-hq`, `dnxhr-hq` | ≈ 1.6 GB/min | camera originals, heavy grading |
+
+ProRes is always 10-bit 4:2:2, so 10-bit sources keep their depth with any ProRes
+profile; DNxHR LB/SQ/HQ are 8-bit, so 10-bit sources get DNxHR HQX instead.
+The old `--dnxhr-profile X` still works and means `--linux-codec dnxhr-X`.
 
 ```bash
 ytsubtran "URL" --resolve-linux
-ytsubtran --file clip.mp4 --resolve-linux --dnxhr-profile sq
+ytsubtran --file clip.mp4 --resolve-linux --linux-codec prores-proxy
 ```
 
 ## 💡 Getting the best quality

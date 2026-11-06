@@ -15,10 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - **`--resolve-linux`** — DaVinci preset for the free Resolve on Linux, which cannot
-  decode H.264/H.265 or AAC. Converts the video to DNxHR + PCM audio in a sibling
-  `*_resolve.mov`; works for downloads and `--file`. 8-bit sources use
-  `--dnxhr-profile` (`lb` by default, ≈ 0.35 GB/min at 1080p30; `sq`, `hq`),
-  10-bit sources get HQX.
+  decode H.264/H.265 or AAC. Converts the video to an editing codec + PCM audio in a
+  sibling `*_resolve.mov`; works for downloads and `--file`. The codec is picked with
+  **`--linux-codec`**: `prores-lt` by default (≈ 0.75 GB/min at 1080p30, 10-bit
+  4:2:2), or `prores-proxy`, `prores`, `prores-hq`, `dnxhr-lb`, `dnxhr-sq`,
+  `dnxhr-hq`. DNxHR turns into HQX for 10-bit sources. `--dnxhr-profile X` is kept
+  as an alias for `--linux-codec dnxhr-X`.
 - **The clipboard-watch queue is now stored on disk** (`.ytsubtran_queue.json` in the
   output folder) instead of living only in memory. Closing the window, a crash or a
   reboot no longer loses the queued links: everything still pending — including the
