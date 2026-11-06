@@ -17,8 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`--resolve-linux`** — DaVinci preset for the free Resolve on Linux, which cannot
   decode H.264/H.265 or AAC. Converts the video to an editing codec + PCM audio in a
   sibling `*_resolve.mov`; works for downloads and `--file`. The codec is picked with
-  **`--linux-codec`**: `prores-lt` by default (≈ 0.75 GB/min at 1080p30, 10-bit
-  4:2:2), or `prores-proxy`, `prores`, `prores-hq`, `dnxhr-lb`, `dnxhr-sq`,
+  **`--linux-codec`**: `prores-proxy` by default (≈ 0.35 GB/min at 1080p30, 10-bit
+  4:2:2 — plenty for ~2 Mb/s YouTube sources), or `prores-lt`, `prores`, `prores-hq`, `dnxhr-lb`, `dnxhr-sq`,
   `dnxhr-hq`. DNxHR turns into HQX for 10-bit sources. `--dnxhr-profile X` is kept
   as an alias for `--linux-codec dnxhr-X`.
 - **The clipboard-watch queue is now stored on disk** (`.ytsubtran_queue.json` in the

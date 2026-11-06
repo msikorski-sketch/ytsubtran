@@ -477,10 +477,10 @@ def test_plan_linux_h264_aac_goes_intermediate_pcm():
     assert plan['audio'] is True
 
 
-def test_linux_video_args_default_is_prores_lt_10bit():
+def test_linux_video_args_default_is_prores_proxy_10bit():
     args = yt.linux_video_args(yt.DEFAULT_LINUX_CODEC, 'yuv420p')
-    assert yt.DEFAULT_LINUX_CODEC == 'prores-lt'
-    assert args[:4] == ['-c:v', 'prores_ks', '-profile:v', '1']
+    assert yt.DEFAULT_LINUX_CODEC == 'prores-proxy'
+    assert args[:4] == ['-c:v', 'prores_ks', '-profile:v', '0']
     assert args[-2:] == ['-pix_fmt', 'yuv422p10le']
 
 
@@ -499,7 +499,7 @@ def test_linux_video_args_dnxhr_8bit_and_10bit():
 def test_effective_linux_codec_precedence():
     import argparse
     ns = argparse.Namespace
-    assert yt.effective_linux_codec(ns(linux_codec=None, dnxhr_profile=None)) == 'prores-lt'
+    assert yt.effective_linux_codec(ns(linux_codec=None, dnxhr_profile=None)) == 'prores-proxy'
     assert yt.effective_linux_codec(ns(linux_codec=None, dnxhr_profile='sq')) == 'dnxhr-sq'
     assert yt.effective_linux_codec(
         ns(linux_codec='prores-hq', dnxhr_profile='sq')) == 'prores-hq'

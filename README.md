@@ -78,7 +78,7 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Force the spoken language (default: auto-detect) | `... --source-lang en` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
 | Guarantee smooth editing in DaVinci Resolve | `--resolve` (also with `--file`) |
-| Same for free DaVinci Resolve on Linux (ProRes LT + PCM) | `--resolve-linux` |
+| Same for free DaVinci Resolve on Linux (ProRes Proxy + PCM) | `--resolve-linux` |
 | Pick a Whisper model | `--model turbo` (or `large-v3`, `medium`, …) |
 | Improve accuracy with context | `--prompt "Pomni, Ragatha, Jax, Caine"` |
 | Age-restricted / "not a bot" videos | `--cookies-from-browser chrome` |
@@ -113,6 +113,20 @@ pip install .
 # …or, if you just want the dependencies without installing the command:
 pip install -r requirements.txt
 ```
+
+**Arch / CachyOS and other distros with an "externally managed" Python:** the
+system `pip` refuses to install packages (and may be missing entirely), so the
+script cannot auto-install `yt-dlp` there. Use the venv above, then link the
+command onto your PATH:
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e .
+ln -sf "$PWD/.venv/bin/ytsubtran" ~/.local/bin/ytsubtran
+```
+
+**Deno** (`sudo pacman -S deno`, `brew install deno`, …) is recommended: yt-dlp
+uses it to solve YouTube's JavaScript challenges; without it some formats may be
+missing.
 
 **ffmpeg:** download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) (Windows) or `sudo apt install ffmpeg` / `brew install ffmpeg`.
 
@@ -279,12 +293,12 @@ The free Linux build of Resolve has no H.264/H.265 or AAC decoders, so even the
 H.264+AAC files from `--resolve` import as offline media or without sound.
 `--resolve-linux` converts the video to an **editing (intra-frame) codec** with
 **PCM audio** in a sibling `*_resolve.mov`; DNxHR/ProRes/CineForm with PCM is left
-as is. The codec is chosen with `--linux-codec` (default **`prores-lt`**):
+as is. The codec is chosen with `--linux-codec` (default **`prores-proxy`**):
 
 | `--linux-codec` | 1080p30 size | When |
 |---|---|---|
-| `prores-proxy`, `dnxhr-lb` | ≈ 0.35 GB/min | short on disk space, rough cuts |
-| `prores-lt` (default) | ≈ 0.75 GB/min | YouTube, phone and camera H.264 — visually transparent |
+| `prores-proxy` (default), `dnxhr-lb` | ≈ 0.35 GB/min | YouTube downloads (~2 Mb/s sources — more bitrate adds no detail) |
+| `prores-lt` | ≈ 0.75 GB/min | own phone and camera H.264 (15–50 Mb/s) — visually transparent |
 | `prores`, `dnxhr-sq` | ≈ 1–1.1 GB/min | higher-quality sources, colour grading |
 | `prores-hq`, `dnxhr-hq` | ≈ 1.6 GB/min | camera originals, heavy grading |
 
@@ -294,7 +308,7 @@ The old `--dnxhr-profile X` still works and means `--linux-codec dnxhr-X`.
 
 ```bash
 ytsubtran "URL" --resolve-linux
-ytsubtran --file clip.mp4 --resolve-linux --linux-codec prores-proxy
+ytsubtran --file clip.mp4 --resolve-linux --linux-codec prores-lt   # own camera footage
 ```
 
 ## 💡 Getting the best quality

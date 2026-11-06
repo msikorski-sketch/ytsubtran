@@ -1255,7 +1255,7 @@ LINUX_CODECS = {
     'dnxhr-sq': ('dnxhd', 'dnxhr_sq', 1.0),
     'dnxhr-hq': ('dnxhd', 'dnxhr_hq', 1.6),
 }
-DEFAULT_LINUX_CODEC = 'prores-lt'
+DEFAULT_LINUX_CODEC = 'prores-proxy'
 
 
 def linux_video_args(linux_codec, pix_fmt):
@@ -1278,7 +1278,7 @@ def linux_video_args(linux_codec, pix_fmt):
 def effective_linux_codec(args):
     """
     Kodek dla --resolve-linux z argumentów CLI: --linux-codec wygrywa,
-    starsze --dnxhr-profile X mapuje się na dnxhr-X, domyślnie ProRes LT.
+    starsze --dnxhr-profile X mapuje się na dnxhr-X, domyślnie ProRes Proxy.
     """
     codec = getattr(args, 'linux_codec', None)
     if codec:
@@ -1306,7 +1306,7 @@ def resolve_transcode_plan(vcodec, pix_fmt, acodec, vfr=False, linux=False):
 
     `linux=True` (--resolve-linux): darmowy Resolve na Linuksie nie ma
     licencji na H.264/H.265/AAC — wszystko poza DNxHR/ProRes/CineForm idzie
-    do kodeka montażowego w MOV (ProRes LT domyślnie, patrz --linux-codec),
+    do kodeka montażowego w MOV (ProRes Proxy domyślnie, patrz --linux-codec),
     a audio poza PCM → PCM.
 
     Zwraca {'video': bool, 'audio': bool,
@@ -1430,7 +1430,8 @@ def ensure_resolve_ready(path, in_place=True, linux=False,
 
     `linux=True` (--resolve-linux): cel to darmowy Resolve na Linuksie —
     kodek montażowy + PCM w MOV (zawsze nowy plik <nazwa>_resolve.mov obok).
-    `linux_codec` to klucz LINUX_CODECS (domyślnie prores-lt).
+    `linux_codec` to klucz LINUX_CODECS (domyślnie prores-proxy — materiał z YouTube
+    ma ~2 Mb/s, wyższe profile tylko puchną bez zysku jakości).
     """
     if not path or not os.path.exists(path):
         return path
@@ -2899,7 +2900,7 @@ Examples:
   # Make an existing local file Resolve-ready (writes <name>_resolve next to it):
   %(prog)s --file "C:\\videos\\clip.mp4" --resolve
 
-  # Free DaVinci Resolve on Linux (no H.264/AAC) — ProRes LT + PCM in .mov:
+  # Free DaVinci Resolve on Linux (no H.264/AAC) — ProRes Proxy + PCM in .mov:
   %(prog)s "https://youtube.com/watch?v=..." --resolve-linux
         """
     )
@@ -3057,7 +3058,7 @@ Examples:
         action='store_true',
         help='DaVinci Resolve preset for the FREE version on Linux, which cannot '
              'decode H.264/H.265 or AAC. Converts the video to an editing codec '
-             '(ProRes LT by default, see --linux-codec) + PCM audio in a sibling '
+             '(ProRes Proxy by default, see --linux-codec) + PCM audio in a sibling '
              '*_resolve.mov; DNxHR/ProRes/CineForm with PCM is left as is. Also '
              'works with --file.'
     )
@@ -3065,7 +3066,8 @@ Examples:
         '--linux-codec',
         choices=list(LINUX_CODECS),
         default=None,
-        help='Editing codec for --resolve-linux (default: prores-lt). Approx. size '
+        help='Editing codec for --resolve-linux (default: prores-proxy, enough for YouTube '
+             'sources; use prores-lt for own camera/phone footage). Approx. size '
              'at 1080p30: prores-proxy / dnxhr-lb ≈ 0.35 GB/min, prores-lt ≈ 0.75, '
              'prores / dnxhr-sq ≈ 1-1.1, prores-hq / dnxhr-hq ≈ 1.6. ProRes is '
              'always 10-bit 4:2:2; DNxHR switches to HQX for 10-bit sources.'
