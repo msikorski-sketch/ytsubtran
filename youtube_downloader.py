@@ -148,18 +148,19 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
         idx, text = item
         original = text.strip()
         if not original:
-            return idx, text, False
+            return idx, text, None
         try:
             # Nowy translator na wywołanie — bezpieczne wątkowo (brak współdzielonego stanu)
             result = GoogleTranslator(source=src, target=target_lang).translate(original)
             if not isinstance(result, str) or not result.strip():
-                return idx, None, True
-            return idx, result, False
-        except Exception:
-            return idx, None, True
+                return idx, None, 'empty response'
+            return idx, result, None
+        except Exception as e:
+            return idx, None, type(e).__name__
 
     translated = [None] * total
     failed = []
+    reasons = {}
     completed = 0
     # Network I/O releases the GIL, so threads give a real speedup
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -167,6 +168,7 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
             translated[idx] = text
             if failure:
                 failed.append(idx + 1)
+                reasons[failure] = reasons.get(failure, 0) + 1
             completed += 1
             if completed % 25 == 0 or completed == total:
                 print(f'   ...processed {completed}/{total} segments')
@@ -175,8 +177,10 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
         positions = ', '.join(str(i) for i in failed[:10])
         if len(failed) > 10:
             positions += ', ...'
+        details = ', '.join(f'{reason} ({count})' for reason, count in sorted(reasons.items()))
+        retry = ' The service is rate-limiting requests; try again later.' if 'TooManyRequests' in reasons else ''
         raise TranslationError(f'{len(failed)}/{total} segments failed to translate '
-                               f'(positions: {positions}).')
+                               f'(positions: {positions}). Reasons: {details}.{retry}')
 
     return translated
 
@@ -200,6 +204,8 @@ def _gemini_translation_prompt(texts, source_name, target_name, prev_pairs=None)
         '- Translate every segment that contains words — including single words and',
         '  short labels. Return a segment unchanged only when it contains no',
         '  translatable speech at all (music/noise markers, stray syllables).',
+        '- Preserve tokens beginning with YTSUBTAG and ending in TOKEN exactly,',
+        '  including their order; they represent subtitle formatting.',
     ]
     if prev_pairs:
         lines.append('')
@@ -319,6 +325,58 @@ def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-fl
             print(f'   ...translated batch {bi}/{len(batches)} ({len(translated)}/{total} segments)')
         prev_pairs = list(zip(batch[-3:], result[-3:]))
     return translated
+
+
+def _translate_subtitle_texts(texts, target_lang, source_lang, engine='google', model='gemini-2.5-flash'):
+    translated = None
+    if engine == 'gemini':
+        print(f'   Translator: Gemini ({model})')
+        translated = translate_texts_gemini(texts, target_lang, source_lang, model)
+        if translated is None:
+            print('⚠️  Gemini translation failed — falling back to Google Translate.')
+    if translated is None:
+        translated = translate_texts(texts, target_lang, source_lang)
+    if (not isinstance(translated, list) or len(translated) != len(texts)
+            or any(not isinstance(t, str) or (src.strip() and not t.strip())
+                   for src, t in zip(texts, translated))):
+        raise TranslationError('Translator returned incomplete subtitle translations.')
+    return translated
+
+
+def translate_subtitle_file(path, translate_to, source_lang='auto', output_dir=None,
+                            also_vtt=False, translate_engine='google', translate_model='gemini-2.5-flash'):
+    """Translate an existing SRT/WebVTT without reading media or loading ASR."""
+    import subtitle_workflow as sw
+
+    try:
+        for language in (translate_to, source_lang):
+            if not isinstance(language, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]{0,34}', language):
+                raise ValueError('Use a language code such as pl, en or pt-BR')
+        document = sw.read_subtitles(path)
+        masked, replacements = sw.protect_markup(document.texts)
+        print(f'\n🔁 Translating {len(masked)} subtitle cues to {lang_name(translate_to)} (no ASR)...')
+        if source_lang.lower() == translate_to.lower():
+            translated = masked
+        else:
+            translated = _translate_subtitle_texts(masked, translate_to, source_lang,
+                                                   translate_engine, translate_model)
+        translated = sw.restore_markup(translated, replacements)
+        folder = output_dir or os.path.dirname(os.path.abspath(path))
+        stem = os.path.splitext(os.path.basename(path))[0] + '_' + translate_to.upper()
+        base = os.path.join(folder, stem)
+        outputs = [(base + '.' + document.format, document.render(translated)),
+                   (base + '.txt', '\n'.join(translated) + '\n')]
+        if also_vtt and document.format != 'vtt':
+            outputs.append((base + '.vtt', document.render_vtt(translated)))
+        if any(os.path.realpath(output) == os.path.realpath(path) for output, _ in outputs):
+            raise ValueError('Output would overwrite the source subtitle file')
+        for output, text in outputs:
+            sw.atomic_write_text(output, text)
+            print(f'   ✓ {output}')
+        return True
+    except (OSError, UnicodeError, ValueError, TranslationError, ImportError) as e:
+        print(f'✗ Subtitle translation failed: {e}')
+        return False
 
 
 def format_timestamp_vtt(seconds):
@@ -529,7 +587,8 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
                        translate_to=None, initial_prompt=None, output_dir=None,
                        also_vtt=False, burn=False, embed=False,
                        engine='auto', qwen_model=None,
-                       translate_engine='google', translate_model='gemini-2.5-flash'):
+                       translate_engine='google', translate_model='gemini-2.5-flash',
+                       force_transcribe=False, cache_source=None):
     """
     Generuje napisy wybranym silnikiem ASR, opcjonalnie z tłumaczeniem.
 
@@ -561,10 +620,39 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
                         lub 'gemini' (cały transkrypt z kontekstem — lepsza
                         spójność; wymaga klucza API; przy błędzie spada na Google).
     - translate_model: model Gemini dla translate_engine='gemini'.
+    - force_transcribe: pomiń zapisaną transkrypcję i uruchom ASR ponownie.
+    - cache_source: oryginalny plik przed lokalną konwersją dla Resolve.
     """
     print('\n' + '=' * 70)
     print('🎙️  GENERATING SUBTITLES')
     print('=' * 70)
+
+    import subtitle_workflow as sw
+
+    if not os.path.isfile(video_file):
+        print(f'✗ File not found: {video_file}')
+        return False
+    source = cache_source or video_file
+    try:
+        cache_key = {'media': sw.media_identity(source),
+                     'options': {'engine': engine, 'whisper_model': model_size, 'source_lang': source_lang,
+                                 'prompt': initial_prompt, 'qwen_model': qwen_model,
+                                 'versions': sw.asr_versions()}}
+    except OSError as e:
+        print(f'✗ Cannot inspect media for transcription: {e}')
+        return False
+    cache_path = sw.transcription_path(source, output_dir)
+    transcription = None if force_transcribe else sw.load_transcription(cache_path, cache_key)
+    if transcription is not None:
+        print(f'♻️  Reusing saved transcription: {cache_path}')
+        segments, full_text, detected_lang = transcription
+        try:
+            return _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
+                                            translate_to, output_dir, also_vtt, burn, embed,
+                                            translate_engine, translate_model)
+        except OSError as e:
+            print(f'✗ Could not export subtitles from saved transcription: {e}')
+            return False
 
     # ffmpeg jest potrzebny każdemu silnikowi (dekodowanie audio)
     if not check_ffmpeg_installed():
@@ -585,11 +673,6 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
         else:
             show_translator_installation_guide()
             return False
-
-    # Check whether the file exists
-    if not os.path.exists(video_file):
-        print(f'✗ File not found: {video_file}')
-        return False
 
     # Wybór trybu: Qwen3-ASR (najlepsza jakość), Whisper albo hybryda.
     try:
@@ -664,6 +747,16 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
                 full_text = joiner.join(t.strip() for t in texts if t.strip())
             except Exception as e:
                 print(f'⚠️  Qwen refinement failed ({e}) — keeping the Whisper text.\n')
+                mode = 'whisper'
+
+        if sw.media_identity(source) != cache_key['media']:
+            print('✗ The source file changed during transcription. Retry with the current file.')
+            return False
+        try:
+            sw.save_transcription(cache_path, cache_key, segments, full_text, detected_lang, mode)
+            print(f'💾 Transcription saved for reuse: {cache_path}')
+        except (OSError, ValueError) as e:
+            print(f'⚠️  Could not save transcription for reuse: {e}')
 
         return _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
                                         translate_to, output_dir, also_vtt, burn, embed,
@@ -852,21 +945,14 @@ def _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
         source_for_translate = detected_lang
         original_texts = [s['text'] for s in segments]
 
-        translated_texts = None
-        if translate_engine == 'gemini':
-            print(f'   Translator: Gemini ({translate_model}) — full-context translation')
-            translated_texts = translate_texts_gemini(original_texts, translate_to,
-                                                      source_for_translate, translate_model)
-            if translated_texts is None:
-                print('⚠️  Gemini translation failed — falling back to Google Translate.')
-        if translated_texts is None:
-            try:
-                translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
-            except (TranslationError, ImportError) as e:
-                print(f'✗ Translation failed: {e}')
-                print('   Original subtitles were saved. No translated files were written; '
-                      'burn/embed was skipped. Retry when the translator is available.')
-                return False
+        try:
+            translated_texts = _translate_subtitle_texts(original_texts, translate_to, source_for_translate,
+                                                        translate_engine, translate_model)
+        except (TranslationError, ImportError) as e:
+            print(f'✗ Translation failed: {e}')
+            print('   Original subtitles were saved. No translated files were written; '
+                  'burn/embed was skipped. Retry when the translator is available.')
+            return False
 
         tgt_code = translate_to.upper()
         srt_tgt = f'{base_name}_{tgt_code}.srt'
@@ -2132,7 +2218,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      engine='auto', qwen_model=None,
                      translate_engine='google', translate_model='gemini-2.5-flash',
                      resolve=False, force_download=False, limit_rate=None,
-                     linux_codec=DEFAULT_LINUX_CODEC):
+                     linux_codec=DEFAULT_LINUX_CODEC, force_transcribe=False):
     url = extract_url(raw_url)
     if not url:
         print('No valid YouTube link detected.')
@@ -2196,6 +2282,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                     embed=embed, engine=engine, qwen_model=qwen_model,
                     translate_engine=translate_engine, translate_model=translate_model,
                     inserts_opts=inserts_opts, fresh_download=False, section_args=section_args,
+                    force_transcribe=force_transcribe,
                 )
                 # Normalizacja (--resolve) mogła zmienić plik/rozmiar — odśwież wpis.
                 if final_path:
@@ -2393,7 +2480,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         source_lang=source_lang, translate_to=translate_to, initial_prompt=initial_prompt,
         also_vtt=also_vtt, burn=burn, embed=embed, engine=engine, qwen_model=qwen_model,
         translate_engine=translate_engine, translate_model=translate_model,
-        inserts_opts=inserts_opts, section_args=section_args,
+        inserts_opts=inserts_opts, section_args=section_args, force_transcribe=force_transcribe,
     )
 
     # Zapisz pobranie w indeksie katalogu (po wszystkich krokach, żeby zapamiętany
@@ -2420,7 +2507,8 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
                            generate_subs, whisper_model, source_lang, translate_to,
                            initial_prompt, also_vtt, burn, embed, engine, qwen_model,
                            translate_engine, translate_model, inserts_opts,
-                           fresh_download=True, linux_codec=DEFAULT_LINUX_CODEC, section_args=None):
+                           fresh_download=True, linux_codec=DEFAULT_LINUX_CODEC, section_args=None,
+                           force_transcribe=False):
     """
     Kroki po pobraniu, wspólne dla świeżo pobranego pliku i dla pliku, który już
     był na dysku (wykryty duplikat): remux/preset DaVinci, napisy, inserty.
@@ -2454,7 +2542,7 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
                                initial_prompt, output_dir, also_vtt, burn, embed,
                                engine=engine, qwen_model=qwen_model,
                                translate_engine=translate_engine,
-                               translate_model=translate_model)
+                               translate_model=translate_model, force_transcribe=force_transcribe)
         else:
             print('\n⚠️  Could not find the downloaded file to generate subtitles.')
     elif generate_subs and format_choice == 'mp3':
@@ -2871,7 +2959,7 @@ def build_download_options(args, inserts_opts=None, section_args=None):
     """
     return dict(
         format_choice=args.format,
-        generate_subs=args.subs,
+        generate_subs=args.subs or bool(args.translate_to) or getattr(args, 'force_transcribe', False),
         whisper_model=args.model,
         source_lang=args.source_lang,
         translate_to=args.translate_to,
@@ -2891,18 +2979,19 @@ def build_download_options(args, inserts_opts=None, section_args=None):
         force_download=args.force_download,
         limit_rate=args.limit_rate,
         linux_codec=effective_linux_codec(args),
+        force_transcribe=getattr(args, 'force_transcribe', False),
     )
 
 
 def file_wants_subs(args, inserts_opts):
     """Czy tryb --file ma generować napisy.
 
-    Jawne --subs/--translate-to zawsze tak. Bez nich napisy są domyślną akcją
+    Jawne --subs/--translate-to/--force-transcribe zawsze tak. Bez nich napisy są domyślną akcją
     --file tylko wtedy, gdy nie poproszono o nic innego: samo wykrywanie
     insertów albo sama konwersja dla Resolve (--resolve/--resolve-linux)
     nie uruchamia rozpoznawania mowy.
     """
-    if args.subs or args.translate_to:
+    if args.subs or args.translate_to or getattr(args, 'force_transcribe', False):
         return True
     return inserts_opts is None and not (args.resolve or args.resolve_linux)
 
@@ -2956,8 +3045,15 @@ Examples:
     parser.add_argument('url', nargs='?', help='YouTube video link')
     parser.add_argument(
         '--file',
-        help='Path to a video/audio file ALREADY on disk. Skips downloading and '
-             'generates (and optionally translates) subtitles right away.'
+        help='Path to a local video/audio file, or an SRT/VTT to translate with --translate-to.'
+    )
+    parser.add_argument(
+        '--subtitle-file', metavar='FILE',
+        help='Translate an existing UTF-8 SRT/VTT with --translate-to. No video, ffmpeg or ASR needed.'
+    )
+    parser.add_argument(
+        '--force-transcribe', action='store_true',
+        help='Ignore saved transcription and run ASR again. Otherwise reuse matching media/model settings.'
     )
     parser.add_argument(
         '--format',
@@ -3289,9 +3385,33 @@ Examples:
 
     args = parser.parse_args()
 
+    subtitle_input = args.subtitle_file
+    if not subtitle_input and args.file and os.path.splitext(args.file)[1].lower() in ('.srt', '.vtt'):
+        subtitle_input = args.file
+    if subtitle_input:
+        if (args.url or args.organize or args.watch_clipboard or args.set_output_dir
+                or (args.subtitle_file and args.file)):
+            parser.error('Subtitle translation is a standalone action; choose one input file.')
+        if not args.translate_to:
+            parser.error('SRT/VTT translation requires --translate-to LANG.')
+        if (args.subs or args.burn or args.embed or args.resolve or args.resolve_linux
+                or args.start or args.end or args.precise_cut or args.force_transcribe
+                or args.find_inserts or args.cut_inserts or args.smart_inserts
+                or args.from_list or args.extract_inserts or args.insert_ai
+                or args.snap_cuts or args.clips_copy or args.insert_any_audio
+                or args.linux_codec or args.dnxhr_profile
+                or args.engine != 'auto' or args.model != 'base' or args.qwen_model or args.prompt
+                or args.format != 'mp4' or args.force_download or args.cookies_from_browser or args.limit_rate):
+            parser.error('Media/ASR options cannot be used when translating an SRT/VTT file.')
+        if not translate_subtitle_file(subtitle_input, args.translate_to, args.source_lang,
+                                       args.output_dir, args.vtt, args.translate_engine, args.translate_model):
+            sys.exit(1)
+        return
+
     if (not args.file and not args.url and not args.organize and not args.set_output_dir
             and not args.watch_clipboard):
         parser.error('Provide a YouTube link, use --file with a path to a file on disk, '
+                     '--subtitle-file with subtitles to translate, '
                      'use --organize with a folder to catalog, --watch-clipboard to '
                      'download whatever you copy, or --set-output-dir to save a default '
                      'output folder.')
@@ -3399,17 +3519,20 @@ Examples:
         # Preset DaVinci dla pliku lokalnego: nowy plik *_resolve obok oryginału;
         # dalsze kroki (napisy, inserty) pracują na wersji zdatnej dla Resolve,
         # więc nazwy plików .srt pasują do pliku, który trafi na timeline.
+        cache_source = args.file
         if args.resolve or args.resolve_linux:
             args.file = ensure_resolve_ready(args.file, in_place=False,
                                              linux=args.resolve_linux,
                                              linux_codec=effective_linux_codec(args))
         if file_wants_subs(args, inserts_opts):
-            generate_subtitles(args.file, args.model, args.source_lang,
-                               args.translate_to, args.prompt, args.output_dir,
-                               args.vtt, args.burn, args.embed,
-                               engine=args.engine, qwen_model=args.qwen_model,
-                               translate_engine=args.translate_engine,
-                               translate_model=args.translate_model)
+            if not generate_subtitles(args.file, args.model, args.source_lang,
+                                      args.translate_to, args.prompt, args.output_dir,
+                                      args.vtt, args.burn, args.embed,
+                                      engine=args.engine, qwen_model=args.qwen_model,
+                                      translate_engine=args.translate_engine,
+                                      translate_model=args.translate_model,
+                                      force_transcribe=args.force_transcribe, cache_source=cache_source):
+                sys.exit(1)
         if inserts_opts:
             process_inserts(args.file, url=None, output_dir=args.output_dir, **inserts_opts)
     else:  # args.url

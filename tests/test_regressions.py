@@ -389,6 +389,7 @@ def test_built_wheel_imports_qwen_outside_checkout(tmp_path):
     wheel, = dist.glob('*.whl')
     with zipfile.ZipFile(wheel) as archive:
         assert 'qwen_engine.py' in archive.namelist()
+        assert 'subtitle_workflow.py' in archive.namelist()
     installed = tmp_path/'installed'
     install = subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-index', '--no-deps',
                               '--no-compile', '--target', str(installed), str(wheel)],
@@ -405,3 +406,11 @@ def test_built_wheel_imports_qwen_outside_checkout(tmp_path):
                               text=True, capture_output=True)
     assert imported.returncode == 0, imported.stdout + imported.stderr
     assert '--engine' in imported.stdout
+    assert '--subtitle-file' in imported.stdout and '--force-transcribe' in imported.stdout
+    source_subtitles = tmp_path/'captions.srt'
+    source_subtitles.write_text('1\n00:00:01,001 --> 00:00:02,999\nHello\n')
+    translated = subprocess.run([sys.executable, '-I', '-c', code, '--subtitle-file', str(source_subtitles),
+                                  '--source-lang', 'en', '--translate-to', 'en'], cwd=tmp_path,
+                                 text=True, capture_output=True)
+    assert translated.returncode == 0, translated.stdout + translated.stderr
+    assert (tmp_path/'captions_EN.srt').read_text() == source_subtitles.read_text()

@@ -14,6 +14,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   generates them, as before).
 
 ### Added
+- **Reusable transcriptions:** completed ASR is saved atomically before translation
+  and automatically reused for matching source metadata, ASR settings and library
+  versions. Translation retries, new target languages and extra subtitle outputs
+  do not rerun ASR. `--force-transcribe` explicitly refreshes it. Interrupted ASR
+  itself is not resumed mid-run.
+- **Standalone SRT/VTT translation:** `--subtitle-file FILE --translate-to LANG`
+  (also `--file FILE.srt/FILE.vtt`) translates UTF-8 subtitles without media,
+  ffmpeg or ASR. Source files, timing, cue IDs and VTT metadata are preserved;
+  formatting tokens are checked before writing translated outputs.
 - **`--resolve-linux`** — DaVinci preset for the free Resolve on Linux, which cannot
   decode H.264/H.265 or AAC. Converts the video to an editing codec + PCM audio in a
   sibling `*_resolve.mov`; works for downloads and `--file`. The codec is picked with

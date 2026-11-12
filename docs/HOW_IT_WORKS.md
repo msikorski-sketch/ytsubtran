@@ -608,6 +608,42 @@ Design decisions:
 
 ---
 
+### 8.1 Translating existing subtitle documents
+
+`--subtitle-file FILE --translate-to LANG` (or `--file FILE.srt/FILE.vtt`)
+runs before download defaults, ffmpeg checks or ASR setup. `subtitle_workflow.py`
+reads UTF-8 SRT/WebVTT and keeps cue IDs, raw timing lines and VTT metadata blocks.
+Only cue payloads are translated. Formatting tags, voice spans, inline timestamps
+and ASS overrides are replaced with tokens and restored after their count and
+order have been checked. A changed token aborts before output writes.
+
+The translated file keeps the source format and adds the target language suffix;
+a TXT is also written, and `--vtt` can export a VTT from SRT. Each output is replaced
+atomically after the entire translation succeeds. Source files are never edited.
+Standalone output defaults to the input directory rather than the saved download
+directory, and incompatible media/ASR options are rejected.
+
+### 8.2 Reusing completed speech recognition
+
+`generate_subtitles()` looks for `<media filename>.transcription.json` in the
+output folder before importing ASR or checking ffmpeg. The versioned state contains
+segments, full text, detected language and actual engine. Its key contains the
+source's real path, size and nanosecond modification time, requested ASR options
+and installed Whisper/Qwen distribution versions. This uses filesystem metadata,
+not a full media checksum. Translation options and output formats are excluded.
+
+After ASR completes, source metadata is checked again and the state is written via
+a temporary file and `os.replace()` before exporting/translating subtitles. A failed
+translation therefore leaves reusable speech recognition on disk. Invalid JSON,
+unsupported state versions, mismatched keys and invalid payloads cause a new ASR
+run. A cache write failure is reported without discarding the completed transcript.
+
+`--force-transcribe` bypasses reuse; incomplete ASR runs have no checkpoint and
+start over. Local Resolve conversion passes the original media as the identity
+source, allowing a regenerated intermediate file to reuse its transcription.
+Manual text edits belong in SRT/VTT files and can be translated with the standalone
+mode; regenerating outputs from ASR state is not an editor for those manual changes.
+
 ## 9. Saving outputs
 
 Files are written next to the source, suffixed with the language code so they never
@@ -738,14 +774,14 @@ The key part is the **console entry point**:
 ytsubtran = "youtube_downloader:main"
 
 [tool.setuptools]
-py-modules = ["youtube_downloader", "inserts", "organize", "qwen_engine"]
+py-modules = ["youtube_downloader", "inserts", "organize", "qwen_engine", "subtitle_workflow"]
 ```
 
 This tells pip to generate a small launcher named `ytsubtran` that calls our
 `main()` function — which is exactly why `main()` exists as a function instead of
 living inside the `if __name__ == '__main__'` block. After installation, users run
 `ytsubtran "URL" --subs` instead of `python youtube_downloader.py …`. Because it's a
-flat-module project, `py-modules` lists all four importable `.py` modules. In
+flat-module project, `py-modules` lists all five importable `.py` modules. In
 particular, omitting `qwen_engine` would silently force installed commands back to
 Whisper even when Qwen was explicitly requested.
 

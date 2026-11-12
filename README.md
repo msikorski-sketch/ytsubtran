@@ -74,6 +74,9 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Best-quality transcription (Qwen3-ASR) | `... --subs --engine qwen` |
 | Cross-check Whisper with Qwen (any language) | `... --subs --engine hybrid` |
 | Translate subtitles → Polish | `... --subs --source-lang es --translate-to pl` |
+| Translate an existing SRT/VTT without a video | `--subtitle-file captions.srt --translate-to pl` |
+| Reuse a completed transcription | automatic when media and ASR settings match |
+| Run speech recognition again | `... --force-transcribe` |
 | Context-aware LLM translation (Gemini) | `... --translate-to pl --translate-engine gemini` |
 | Force the spoken language (default: auto-detect) | `... --source-lang en` |
 | Work on a local file (no download) | `--file "C:\videos\clip.mp4"` |
@@ -203,6 +206,46 @@ command when the translator is available; existing translated files are preserve
 # Japanese video -> best-quality Polish subtitles (Qwen3-ASR + Gemini):
 ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
 ```
+
+## Reuse a transcription and translate existing subtitles
+
+Completed speech recognition is saved **before translation** as
+`<media filename>.transcription.json` in the output folder (for example,
+`video.mp4.transcription.json`). Repeat the command to retry a failed translation,
+pick another target language, or add VTT output without running Whisper/Qwen again:
+
+```bash
+ytsubtran --file video.mp4 --source-lang en --translate-to pl --output-dir results
+# If translation failed, run the same command again. To add another language:
+ytsubtran --file video.mp4 --source-lang en --translate-to de --output-dir results
+```
+
+Reuse requires the same output folder, source path, file size, modification time,
+ASR options (engine, model, source language, prompt), and installed Whisper/Qwen
+versions. Translation settings do not invalidate the saved transcription. Use
+`--force-transcribe` to run ASR again, including after a hardware change. Invalid
+or incomplete state files are ignored. This resumes from a **completed transcription**;
+an interrupted ASR run itself still starts over. Local Resolve conversion uses the
+original file's identity so repeating that conversion does not invalidate ASR state.
+
+To translate subtitles you already have — including files you corrected by hand —
+use a standalone mode that needs **no media, ffmpeg or ASR model**:
+
+```bash
+ytsubtran --subtitle-file captions.srt --source-lang en --translate-to pl
+ytsubtran --subtitle-file captions.vtt --translate-to pl --translate-engine gemini
+# --file also recognizes SRT/VTT inputs:
+ytsubtran --file captions.srt --translate-to de --output-dir translations --vtt
+```
+
+Input must be UTF-8 SRT or WebVTT. The output is `captions_PL.srt` or
+`captions_PL.vtt`, plus a `.txt` copy, in the source folder unless `--output-dir`
+is given. `--vtt` also exports a VTT when the input is SRT. Input files stay
+unchanged; cue IDs, timing lines, VTT settings, notes and style/region blocks are
+preserved in the matching output format. Formatting tags and inline timestamps
+are protected during translation; if the translator changes those tokens, the
+operation fails before writing outputs. Media editing and ASR options cannot be
+combined with standalone subtitle translation.
 
 ## 📋 Clipboard watch mode (`--watch-clipboard`)
 
