@@ -20,11 +20,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dev tools
-        # Only lint/test tools are needed: the pure functions under test import
-        # nothing beyond the standard library, so we skip the heavy deps
-        # (torch/whisper) for a fast, reliable CI.
-        run: pip install pytest ruff
+      - name: Install test tools and media dependencies
+        # Exercise wheel packaging and real media edits without downloading ASR models.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install pytest ruff build setuptools wheel yt-dlp
 
       - name: Lint (ruff)
         run: ruff check .

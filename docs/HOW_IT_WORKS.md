@@ -545,10 +545,14 @@ text — so translated subtitles remain perfectly in sync.
 
 ## 8. Translation
 
-Whisper gives us text in the original language. For any target other than English,
-we translate the segment texts ourselves:
+Whisper gives us text in the original language. For a different target language,
+we translate the segment texts ourselves. The implementation lives in
+`youtube_downloader.py`; the example below shows its error policy and ordering:
 
 ```python
+from youtube_downloader import TranslationError
+
+
 def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
     from concurrent.futures import ThreadPoolExecutor
     from deep_translator import GoogleTranslator
@@ -558,17 +562,24 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
         idx, text = item
         original = text.strip()
         if not original:
-            return idx, text
+            return idx, text, False
         try:
             r = GoogleTranslator(source=src, target=target_lang).translate(original)
-            return idx, (r or original)
+            if not isinstance(r, str) or not r.strip():
+                return idx, None, True
+            return idx, r, False
         except Exception:
-            return idx, original          # on failure keep the original, don't crash
+            return idx, None, True
 
     translated = [None] * len(texts)
+    failed = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        for idx, text in ex.map(work, enumerate(texts)):
+        for idx, text, failure in ex.map(work, enumerate(texts)):
             translated[idx] = text
+            if failure:
+                failed.append(idx + 1)
+    if failed:
+        raise TranslationError(f'{len(failed)}/{len(texts)} segments failed: {failed}')
     return translated
 ```
 
@@ -586,8 +597,12 @@ Design decisions:
   pre-sized list by index, so timing stays perfect.
 - A fresh `GoogleTranslator` is created per call — it holds no connection state, so
   this is safe across threads.
-- If a single segment fails to translate, we keep the original text for that line
-  instead of aborting the whole job.
+- If a non-empty segment fails or gets an empty response, `TranslationError`
+  reports the failed count and positions. Original subtitles remain available;
+  translated files are not written and burn/embed is skipped. Existing translated
+  files are preserved, so an outage cannot overwrite a previous valid translation.
+- Gemini API errors and empty translations trigger Google fallback. An invalid
+  Gemini key is cleared and prompted for once before falling back.
 - Per-segment translation still loses some cross-sentence context; merging segments
   into full sentences before translating is the next quality step (see §13).
 
@@ -698,9 +713,20 @@ Two operational flags worth highlighting:
   the "confirm you're not a bot" check — the most common downloads our diagnosis
   flags as needing a login.
 - **`--output-dir DIR`** redirects where files land. For downloads we build the
-  yt-dlp output template as `os.path.join(output_dir, '%(title)s.%(ext)s')`; for
+  yt-dlp output template as `os.path.join(output_dir, '%(title)s [%(id)s].%(ext)s')`
+  (with an extra range suffix for fragments); for
   subtitles we compute the base name inside that directory. The directory is created
   with `os.makedirs(..., exist_ok=True)` if missing.
+
+The ID separates different videos with the same title. A completed file must match
+the requested ID and range before post-processing; an existing file skipped by
+yt-dlp also needs a duration check. Duration alone is never treated as identity.
+Legacy index entries that point different video IDs at one file are rejected.
+
+For fragment downloads, post-processing omits the source URL when detecting
+inserts. This disables SponsorBlock's full-video timestamps; local detection and
+Gemini analyze the fragment itself. It also avoids assuming an exact source offset
+for downloads that begin on an earlier keyframe.
 
 ### 10.1 Packaging and the `ytsubtran` command
 
@@ -712,14 +738,16 @@ The key part is the **console entry point**:
 ytsubtran = "youtube_downloader:main"
 
 [tool.setuptools]
-py-modules = ["youtube_downloader"]
+py-modules = ["youtube_downloader", "inserts", "organize", "qwen_engine"]
 ```
 
 This tells pip to generate a small launcher named `ytsubtran` that calls our
 `main()` function — which is exactly why `main()` exists as a function instead of
 living inside the `if __name__ == '__main__'` block. After installation, users run
 `ytsubtran "URL" --subs` instead of `python youtube_downloader.py …`. Because it's a
-single-module project, `py-modules` (not `packages`) points at the one `.py` file.
+flat-module project, `py-modules` lists all four importable `.py` modules. In
+particular, omitting `qwen_engine` would silently force installed commands back to
+Whisper even when Qwen was explicitly requested.
 
 ### 10.2 Tests and continuous integration
 
@@ -727,12 +755,14 @@ The pure, side-effect-free helpers (`extract_url`, `format_timestamp_srt`,
 `diagnose_failure`, `lang_name`) are covered by `pytest` tests in `tests/`. They
 import `youtube_downloader` directly, which is cheap because the heavy libraries
 (whisper, torch, yt-dlp) are imported **lazily inside functions**, not at module
-top level — so the tests need only the standard library.
+top level. Most tests need no model dependencies; regression tests also build a
+wheel, import its Qwen module in an isolated process, exercise translation failures
+with fake API clients, and use real ffmpeg and yt-dlp with local media.
 
 A GitHub Actions workflow (`.github/workflows/ci.yml`) runs `ruff` (lint) and
 `pytest` on every push and pull request, across Python 3.9 and 3.12. Because the
-tests don't need the heavy deps, CI installs only `pytest` and `ruff` and stays fast.
-This is a deliberate benefit of the lazy-import structure.
+tests don't need model weights, CI installs `pytest`, `ruff`, build tools, yt-dlp
+and ffmpeg. No transcription models or remote API credentials are needed.
 
 ---
 
@@ -743,8 +773,9 @@ A few principles run through the whole program:
 - **Fail loudly but helpfully.** Every failure path prints *why* and *what to try*,
   not just a stack trace. Diagnosis messages map error signatures to plain-language
   advice.
-- **Degrade gracefully.** Out of VRAM? Fall back to CPU. A segment won't translate?
-  Keep the original. yt-dlp outdated? Update and retry.
+- **Degrade gracefully.** Out of VRAM? Fall back to CPU. Gemini fails? Try Google.
+  Google fails? Report the failed segments and preserve original subtitles without
+  writing a falsely labeled translation. yt-dlp outdated? Update and retry.
 - **Check prerequisites early.** Before transcribing we verify Whisper, ffmpeg, and
   (if translating) deep-translator are present, and print install instructions if
   not — so the user learns the problem in one second, not after a long download.

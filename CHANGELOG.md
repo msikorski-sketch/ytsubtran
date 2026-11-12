@@ -66,6 +66,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the same name (previously yt-dlp skipped the second one as "already downloaded").
 
 ### Fixed
+- Downloads now include the video ID in their filenames, preventing same-title
+  collisions. Existing files are checked before post-processing, and legacy index
+  entries pointing different video IDs at one file are not accepted as duplicates.
+- Fragment downloads skip SponsorBlock's full-video timestamps and use local
+  insert detection instead, including when processing a cached fragment.
+- Built packages include `qwen_engine.py`; an isolated wheel import is tested.
+- Gemini translation errors use the correct invalid-key helper and fall back to
+  Google Translate. Invalid keys are retried once; empty translations also fall back.
+- Failed Google translations report the failed segment count, preserve original
+  subtitles and existing target files, and skip writing or burning untranslated
+  text under the target language label.
+- Catalog side-cars belong to the longest matching video stem. Ambiguous ownership
+  leaves the side-car in place instead of moving it with the wrong video.
+- Insert cutting supports video without an audio stream.
+- The insert heuristic now rejects unconfirmed audio jumps when no scene cuts are
+  found, unless `--insert-any-audio` was requested.
 - **Clipboard watch mode now reacts to re-copying the same link.** Detection compared
   clipboard *text*, so copying a link that was already in the clipboard (the usual
   case right after starting the mode, which deliberately ignores what it finds there)

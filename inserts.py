@@ -247,9 +247,8 @@ def detect_inserts_heuristic(path, min_len=2.0, max_len=20.0, jump_lu=8.0,
 
     if require_scene_cut:
         cuts = scene_cut_times(path, duration=duration)
-        if cuts:
-            spans = [(s, e) for (s, e) in spans
-                     if any(abs(c - s) <= scene_window for c in cuts)]
+        spans = [(s, e) for (s, e) in spans
+                 if any(abs(c - s) <= scene_window for c in cuts)]
 
     return [(s, e, 'heuristic') for (s, e) in spans]
 
@@ -628,22 +627,37 @@ def cut_segments(path, cut_ranges, output_file):
     if not keeps:
         return None
 
+    try:
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+             '-show_entries', 'stream=index', '-of', 'csv=p=0', os.path.abspath(path)],
+            capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f'✗ Could not inspect audio streams before cutting: {e}')
+        return None
+    has_audio = bool(probe.stdout.strip())
+
     parts, labels = [], []
     for idx, (s, e) in enumerate(keeps):
         parts.append(
-            f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{idx}];"
-            f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{idx}]"
+            f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{idx}]"
         )
-        labels.append(f"[v{idx}][a{idx}]")
+        if has_audio:
+            parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{idx}]")
+        labels.append(f"[v{idx}][a{idx}]" if has_audio else f"[v{idx}]")
+    audio_output = '[outa]' if has_audio else ''
     filtergraph = ';'.join(parts) + ';' + ''.join(labels) + \
-        f"concat=n={len(keeps)}:v=1:a=1[outv][outa]"
+        f"concat=n={len(keeps)}:v=1:a={int(has_audio)}[outv]{audio_output}"
 
     cmd = ['ffmpeg', '-y', '-hide_banner', '-i', os.path.abspath(path),
-           '-filter_complex', filtergraph,
-           '-map', '[outv]', '-map', '[outa]', os.path.abspath(output_file)]
+           '-filter_complex', filtergraph, '-map', '[outv]']
+    if has_audio:
+        cmd += ['-map', '[outa]']
+    cmd.append(os.path.abspath(output_file))
     r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
     if r.returncode == 0 and os.path.exists(output_file):
         return output_file
+    print('\n'.join(r.stderr.strip().splitlines()[-5:]))
     return None
 
 
@@ -732,7 +746,7 @@ def find_inserts(video_file, url=None, use_ai=False, ai_model='llama3.1',
     'sponsorblock' or 'heuristic'. Does NOT cut anything.
     """
     video_id = get_video_id(url)
-    sb = fetch_sponsorblock_segments(video_id, sponsorblock_categories)
+    sb = fetch_sponsorblock_segments(video_id, sponsorblock_categories) if video_id else []
     if sb:
         return sb, 'sponsorblock'
 

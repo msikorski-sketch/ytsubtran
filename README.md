@@ -194,6 +194,11 @@ biggest win for Japanese/Chinese/Korean sources. It reuses the same API key as
 back to Google Translate automatically on any error. Pick the model with
 `--translate-model` (default: `gemini-2.5-flash`).
 
+If Google translation fails for any non-empty segment, the tool reports the
+failed count and keeps the original subtitles. It does not write translated
+files or burn/embed untranslated text under the target language label. Retry the
+command when the translator is available; existing translated files are preserved.
+
 ```bash
 # Japanese video -> best-quality Polish subtitles (Qwen3-ASR + Gemini):
 ytsubtran "URL" --subs --engine qwen --source-lang ja --translate-to pl --translate-engine gemini
@@ -237,7 +242,7 @@ second run of the same link stops immediately and tells you exactly why:
 ```text
 ⏭️  ALREADY DOWNLOADED — skipping the download
 Video id:   UV0mhY2Dxr0  (matched by YouTube id, not by file name)
-File:       D:\edit\Nature Relaxation Film 4K [5-12s].mp4
+File:       D:\edit\Nature Relaxation Film 4K [UV0mhY2Dxr0] [5-12s].mp4
 Size:       13.3 MB
 Downloaded: 2026-08-08 13:11:23
 Match:      same video + same format (mp4) + same range (5.000-12.000 s)
@@ -246,7 +251,9 @@ Match:      same video + same format (mp4) + same range (5.000-12.000 s)
 What makes it trustworthy:
 
 - **Matched by YouTube video id**, not by file name — renamed titles still match,
-  and a same-named file from a different video never counts as a match.
+  and new downloads include the ID in their name (`Title [VIDEO_ID].mp4`), so
+  different videos with the same title stay separate. Legacy index entries that
+  assign one file to multiple video IDs trigger a fresh download.
 - **Format and range are part of the match**: an MP3 is not a duplicate of an MP4,
   and a `--start/--end` fragment is never mistaken for the full video (fragments
   also get their range in the file name, e.g. `… [5-12s].mp4`).
@@ -255,9 +262,10 @@ What makes it trustworthy:
   format (360p), you are told instead of having that copy silently accepted forever.
 - **The file must really be there.** If it was deleted, moved or left incomplete
   (`.part`), the script says so and downloads it again instead of silently skipping.
-- **Files the index doesn't know** (e.g. from older runs) are verified by comparing
-  the real duration with YouTube's before being accepted; when the length doesn't
-  match, nothing is recorded and you get a warning rather than a false skip.
+- **Files the index doesn't know** are accepted only with the requested ID and
+  range in their name. If yt-dlp skips an existing file, its real duration is also
+  checked before any post-processing. Duration alone never establishes identity;
+  legacy title-only files without an index entry are left untouched.
 - Skipping the download still runs everything else you asked for — subtitles,
   `--resolve` normalization, insert detection — on the existing file.
 - Playlist links use yt-dlp's own download archive (`.ytsubtran_archive.txt`), so
@@ -363,6 +371,11 @@ ytsubtran --file clip.mp4 --find-inserts --insert-jump 7 --insert-min-len 2
 
 `--find-inserts` never edits the video — it only proposes a cut list for review.
 `--cut-inserts` writes a new `*_nocuts.mp4`, leaving the original untouched.
+Cutting supports videos with or without audio. The default heuristic requires a
+nearby scene cut; an audio jump alone is accepted only with `--insert-any-audio`.
+For downloads using `--start`/`--end`, SponsorBlock is skipped because its times
+refer to the full video. Local detection uses the fragment's own timeline instead;
+saved cut lists and Gemini analysis also use the file being processed.
 
 ### Mark inserts in DaVinci Resolve
 
@@ -479,6 +492,9 @@ It **previews the full plan and asks before moving anything** (use `--yes` to sk
 the prompt). Files it can't confidently identify are left untouched in an
 `_Uncategorized\` folder for you to sort by hand. Any matching subtitle/transcript
 side-cars (`.srt`/`.vtt`/`.txt`) follow their video and are renamed with it.
+When video names share a prefix, each side-car follows the longest matching video
+stem. Ambiguous side-cars (for example, two containers with the same stem) stay in
+the source folder.
 
 | Tweak | Flag |
 |---|---|

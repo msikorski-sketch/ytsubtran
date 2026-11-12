@@ -86,8 +86,9 @@ def collect_sidecars(folder, video_filename):
     """
     Side-car files (subtitles/transcripts) that belong to `video_filename`: either
     exactly ``<stem>.<srt|vtt|txt|ass>`` or ``<stem>_*.<…>`` (e.g. ``_EN.srt`` as
-    produced by the subtitle step). The trailing ``_`` guard means ``video (1)``
-    does not greedily grab ``video (10)``'s files. Returns a sorted name list.
+    produced by the subtitle step). The longest matching video stem owns each
+    side-car; ambiguous owners (e.g. two containers with the same stem) leave it
+    in place. Returns a sorted name list.
     """
     stem = os.path.splitext(video_filename)[0]
     out = []
@@ -95,6 +96,9 @@ def collect_sidecars(folder, video_filename):
         names = os.listdir(folder)
     except OSError:
         return out
+    videos = [(name, os.path.splitext(name)[0]) for name in names
+              if os.path.splitext(name)[1].lower() in VIDEO_EXTS
+              and os.path.isfile(os.path.join(folder, name))]
     for name in names:
         if name == video_filename:
             continue
@@ -104,7 +108,12 @@ def collect_sidecars(folder, video_filename):
         if ext.lower() not in SIDECAR_EXTS:
             continue
         if base == stem or name.startswith(stem + '_'):
-            out.append(name)
+            owners = [(video, video_stem) for video, video_stem in videos
+                      if base == video_stem or base.startswith(video_stem + '_')]
+            longest = max((len(video_stem) for _, video_stem in owners), default=0)
+            best = [video for video, video_stem in owners if len(video_stem) == longest]
+            if best == [video_filename]:
+                out.append(name)
     return sorted(out)
 
 

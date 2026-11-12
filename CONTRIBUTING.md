@@ -29,8 +29,13 @@ Open an issue describing the use case. Good areas to explore:
 
 ## Development notes
 
-- The whole pipeline lives in a single file: [`youtube_downloader.py`](youtube_downloader.py).
+- The CLI and download pipeline live in [`youtube_downloader.py`](youtube_downloader.py).
+  Qwen transcription, insert editing and cataloging live in separate modules.
 - Downloading is independent from subtitle generation — you can test each separately.
-- No API keys are required; translation uses the free Google Translate endpoint via `deep-translator`.
+- Google translation needs no key; optional Gemini features require one.
+- To run the tests without installing transcription models, install ffmpeg/ffprobe
+  and `pip install pytest ruff build setuptools wheel yt-dlp`, then run
+  `python -m pytest -q` and `ruff check .`. Regression tests use local media and
+  fake API clients, and build/install a wheel outside the checkout.
 
 Be kind and constructive. 🙂

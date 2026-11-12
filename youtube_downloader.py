@@ -123,6 +123,10 @@ def lang_name(code):
     return LANGUAGE_NAMES.get(code, code)
 
 
+class TranslationError(Exception):
+    """At least one subtitle segment could not be translated."""
+
+
 def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
     """
     Tłumaczy listę tekstów na język docelowy używając Google Translate.
@@ -130,9 +134,8 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
     Segmenty tłumaczone są RÓWNOLEGLE (pula wątków) — przy długich filmach
     to wielokrotne przyspieszenie względem tłumaczenia jeden po drugim, a kolejność
     i przyporządkowanie do znaczników czasu pozostają dokładne (mapowanie 1:1).
-    Jeśli pojedynczy segment się nie przetłumaczy, zostaje oryginalny tekst.
-
-    Zwraca listę przetłumaczonych tekstów (tej samej długości co wejście).
+    Zwraca listę tej samej długości co wejście. Gdy którykolwiek niepusty
+    segment zawiedzie, zgłasza TranslationError z liczbą i pozycjami błędów.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -145,23 +148,35 @@ def translate_texts(texts, target_lang, source_lang='auto', max_workers=8):
         idx, text = item
         original = text.strip()
         if not original:
-            return idx, text
+            return idx, text, False
         try:
             # Nowy translator na wywołanie — bezpieczne wątkowo (brak współdzielonego stanu)
             result = GoogleTranslator(source=src, target=target_lang).translate(original)
-            return idx, (result if result else original)
+            if not isinstance(result, str) or not result.strip():
+                return idx, None, True
+            return idx, result, False
         except Exception:
-            return idx, original  # silently keep the original — don't abort everything
+            return idx, None, True
 
     translated = [None] * total
+    failed = []
     completed = 0
     # Network I/O releases the GIL, so threads give a real speedup
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for idx, text in executor.map(work, enumerate(texts)):
+        for idx, text, failure in executor.map(work, enumerate(texts)):
             translated[idx] = text
+            if failure:
+                failed.append(idx + 1)
             completed += 1
             if completed % 25 == 0 or completed == total:
-                print(f'   ...translated {completed}/{total} segments')
+                print(f'   ...processed {completed}/{total} segments')
+
+    if failed:
+        positions = ', '.join(str(i) for i in failed[:10])
+        if len(failed) > 10:
+            positions += ', ...'
+        raise TranslationError(f'{len(failed)}/{total} segments failed to translate '
+                               f'(positions: {positions}).')
 
     return translated
 
@@ -226,8 +241,8 @@ def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-fl
     w partiach po `batch_size` segmentów, z końcówką poprzedniej partii jako
     kontekstem spójności.
 
-    Zwraca listę tłumaczeń (1:1 z wejściem; puste odpowiedzi zastępuje
-    oryginałem) albo None przy dowolnym problemie (brak SDK/klucza, błąd API,
+    Zwraca listę tłumaczeń (1:1 z wejściem) albo None przy problemie
+    (brak SDK/klucza, błąd API, puste tłumaczenie niepustego segmentu,
     niesparsowalna odpowiedź) — wywołujący spada wtedy na Google Translate.
     """
     try:
@@ -252,7 +267,11 @@ def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-fl
 
     source_name = lang_name(source_lang)
     target_name = lang_name(target_lang)
-    client = genai.Client(api_key=key)
+    try:
+        client = genai.Client(api_key=key)
+    except Exception as e:
+        print(f'   Could not initialize Gemini: {e}')
+        return None
 
     def translate_batch(batch, prev_pairs):
         prompt = _gemini_translation_prompt(batch, source_name, target_name, prev_pairs)
@@ -273,15 +292,15 @@ def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-fl
             result = translate_batch(batch, prev_pairs)
         except Exception as e:
             # Nieważny/wygasły klucz: wyczyść i poproś o nowy (raz), jak w --organize
-            if not retried_key and inserts._looks_like_bad_key(e):
+            if not retried_key and inserts._is_invalid_key_error(e):
                 print('   Saved Gemini key is invalid/expired.')
                 inserts.clear_gemini_key()
                 key = inserts.get_gemini_key(force_prompt=True)
                 if not key:
                     return None
-                client = genai.Client(api_key=key)
                 retried_key = True
                 try:
+                    client = genai.Client(api_key=key)
                     result = translate_batch(batch, prev_pairs)
                 except Exception as e2:
                     print(f'   Gemini request failed again: {e2}')
@@ -292,8 +311,9 @@ def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-fl
         if result is None:
             print('   Gemini returned a response that does not map 1:1 to the segments.')
             return None
-        # Puste tłumaczenie -> zostaw oryginał (nie gubimy tekstu)
-        result = [t if t.strip() else src for t, src in zip(result, batch)]
+        if any(src.strip() and not translated.strip() for src, translated in zip(batch, result)):
+            print('   Gemini returned empty translations for spoken segments.')
+            return None
         translated.extend(result)
         if len(batches) > 1:
             print(f'   ...translated batch {bi}/{len(batches)} ({len(translated)}/{total} segments)')
@@ -840,7 +860,13 @@ def _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
             if translated_texts is None:
                 print('⚠️  Gemini translation failed — falling back to Google Translate.')
         if translated_texts is None:
-            translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
+            try:
+                translated_texts = translate_texts(original_texts, translate_to, source_for_translate)
+            except (TranslationError, ImportError) as e:
+                print(f'✗ Translation failed: {e}')
+                print('   Original subtitles were saved. No translated files were written; '
+                      'burn/embed was skipped. Retry when the translator is available.')
+                return False
 
         tgt_code = translate_to.upper()
         srt_tgt = f'{base_name}_{tgt_code}.srt'
@@ -992,7 +1018,13 @@ def run_ytdlp(command):
     return process.returncode, ''.join(collected)
 
 
-def detect_downloaded_file(before_files, output_dir, format_choice):
+def download_filename_matches(path, video_id, section_args=None):
+    """Match the ID and range suffix written by our download template."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return stem.endswith(f'[{video_id}]{fragment_suffix(section_args)}')
+
+
+def detect_downloaded_file(before_files, output_dir, format_choice, video_id=None, section_args=None):
     """
     Wykrywa pobrany plik porównując zawartość katalogu sprzed i po pobraniu.
     Najpewniejsza metoda — niezależna od formatu komunikatów yt-dlp.
@@ -1003,9 +1035,10 @@ def detect_downloaded_file(before_files, output_dir, format_choice):
     except OSError:
         return None
 
-    # Najpierw nowe pliki; jeśli plik już istniał (re-download) — bierzemy najnowszy
-    new_files = [f for f in (after_files - before_files) if f.lower().endswith(exts)]
-    pool = new_files if new_files else [f for f in after_files if f.lower().endswith(exts)]
+    candidates = [f for f in after_files if f.lower().endswith(exts)
+                  and (not video_id or download_filename_matches(f, video_id, section_args))]
+    new_files = [f for f in candidates if f not in before_files]
+    pool = new_files if new_files else candidates
     if not pool:
         return None
 
@@ -1567,12 +1600,17 @@ def try_download(url, format_spec, format_name, output_template, extra_args, out
 
         if returncode == 0:
             filename = None
+            video_id = video_id_from_url(url)
             for line in reversed(_read_printed_paths(print_file)):
-                if os.path.exists(line):
+                if os.path.exists(line) and (not video_id or download_filename_matches(line, video_id, extra_args)):
                     filename = line  # ostatni ukończony plik (ścieżka absolutna)
                     break
             if not filename:
-                filename = detect_downloaded_file(before_files, output_dir, format_choice)
+                filename = detect_downloaded_file(before_files, output_dir, format_choice, video_id, extra_args)
+            if video_id and not filename:
+                message = 'Could not identify a completed file with the requested video ID and range.'
+                print(f'✗ {message}')
+                return False, None, output + '\n' + message
             print(f'✓ Success! Downloaded using: {format_name}')
             return True, filename, output
 
@@ -1967,10 +2005,13 @@ def durations_match(actual, expected, fragment=False, keyframe_slack=15.0):
 
 def existing_file_matches_video(path, url, section_args=None, cookies_from_browser=None):
     """
-    Czy plik, który już leżał w katalogu (yt-dlp pominął pobranie, bo nazwa się
-    zgadzała), to NA PEWNO ten film? Porównuje długość pliku z długością
-    zgłaszaną przez YouTube. Zwraca True / False / None (nie dało się ustalić).
+    Weryfikuje ID i zakres w nazwie pliku, a następnie długość z YouTube.
+    Sama zbliżona długość nie potwierdza tożsamości materiału.
+    Zwraca True / False / None (nie dało się ustalić długości).
     """
+    video_id = video_id_from_url(url)
+    if not video_id or not download_filename_matches(path, video_id, section_args):
+        return False
     expected = expected_media_duration(probe_video_duration(url, cookies_from_browser),
                                        section_args)
     if expected <= 0:
@@ -2000,11 +2041,27 @@ def check_already_downloaded(url, output_dir, format_choice, section_args=None):
         return None, None  # nie umiemy wskazać filmu — nie ryzykujemy pominięcia
 
     key = download_key(video_id, format_choice, section_args)
-    entry = load_download_index(output_dir).get(key)
+    index = load_download_index(output_dir)
+    entry = index.get(key)
     if not entry:
         return None, key
 
     status, path = verify_download_entry(entry, output_dir)
+
+    if path:
+        canonical = os.path.normcase(os.path.abspath(path))
+        for other_key, other in index.items():
+            if other_key == key or not isinstance(other, dict):
+                continue
+            other_id = other.get('video_id') or other_key.split('|', 1)[0]
+            other_name = other.get('file')
+            if not other_name or other_id == video_id:
+                continue
+            other_path = other_name if os.path.isabs(other_name) else os.path.join(output_dir, other_name)
+            if os.path.normcase(os.path.abspath(other_path)) == canonical:
+                print('\n⚠️  Download index assigns the same file to different video IDs — '
+                      'downloading a separate copy.')
+                return None, key
 
     if status == 'modified':
         # Plik żyje, ale ma inny rozmiar niż w chwili pobrania (typowo: późniejszy
@@ -2085,10 +2142,9 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         os.makedirs(output_dir, exist_ok=True)
     else:
         output_dir = os.getcwd()
-    # Fragmenty dostają zakres w nazwie — inaczej drugi fragment tego samego
-    # filmu trafiłby na istniejącą nazwę i yt-dlp pominąłby pobranie.
+    # ID rozróżnia filmy o tym samym tytule, zakres rozróżnia ich fragmenty.
     output_template = os.path.join(
-        output_dir, f'%(title)s{fragment_suffix(section_args)}.%(ext)s')
+        output_dir, f'%(title)s [%(id)s]{fragment_suffix(section_args)}.%(ext)s')
 
     # Czysty link playlisty: yt-dlp pobierze WSZYSTKIE pozycje (--no-playlist
     # chroni tylko linki do pojedynczego filmu z doklejonym &list=...).
@@ -2139,7 +2195,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                     initial_prompt=initial_prompt, also_vtt=also_vtt, burn=burn,
                     embed=embed, engine=engine, qwen_model=qwen_model,
                     translate_engine=translate_engine, translate_model=translate_model,
-                    inserts_opts=inserts_opts, fresh_download=False,
+                    inserts_opts=inserts_opts, fresh_download=False, section_args=section_args,
                 )
                 # Normalizacja (--resolve) mogła zmienić plik/rozmiar — odśwież wpis.
                 if final_path:
@@ -2314,15 +2370,21 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
 
     # Resolve the absolute path of the downloaded file (used by subtitles + inserts)
     final_path = None
-    if not downloaded_file:
-        exts = MEDIA_EXTENSIONS.get(format_choice, ())
-        media = [f for f in os.listdir(output_dir) if f.lower().endswith(exts)]
-        if media:
-            media.sort(key=lambda x: os.path.getmtime(os.path.join(output_dir, x)), reverse=True)
-            downloaded_file = media[0]
     if downloaded_file:
         final_path = downloaded_file if os.path.isabs(downloaded_file) \
             else os.path.join(output_dir, downloaded_file)
+
+    # Validate before remuxing, transcribing or cutting any existing file.
+    if video_id and final_path and not download_filename_matches(final_path, video_id, section_args):
+        print('\n✗ The returned file does not match the requested video ID and range. '
+              'Leaving it untouched and unrecorded.')
+        return
+    if final_path and 'has already been downloaded' in (output or '').lower():
+        verdict = existing_file_matches_video(final_path, url, section_args, cookies_from_browser)
+        if verdict is not True:
+            print('\n⚠️  Could not verify the existing file length. Leaving it untouched '
+                  'and unrecorded. Use --force-download to fetch a fresh copy.')
+            return
 
     final_path = _post_process_download(
         final_path, url=url, output_dir=output_dir, format_choice=format_choice,
@@ -2331,31 +2393,12 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
         source_lang=source_lang, translate_to=translate_to, initial_prompt=initial_prompt,
         also_vtt=also_vtt, burn=burn, embed=embed, engine=engine, qwen_model=qwen_model,
         translate_engine=translate_engine, translate_model=translate_model,
-        inserts_opts=inserts_opts,
+        inserts_opts=inserts_opts, section_args=section_args,
     )
 
     # Zapisz pobranie w indeksie katalogu (po wszystkich krokach, żeby zapamiętany
     # rozmiar odpowiadał plikowi, który faktycznie został na dysku).
     if final_path and dup_key:
-        # yt-dlp mogło pominąć pobieranie, bo plik o TAKIEJ NAZWIE już tam był
-        # (np. z wcześniejszej wersji skryptu albo z innego narzędzia). Wtedy nie
-        # wolno bezrefleksyjnie zapisać go jako „ten film" — najpierw sprawdzamy
-        # długością, czy to na pewno ten materiał.
-        if 'has already been downloaded' in (output or '').lower():
-            print('\nℹ️  A file with this name was already in the folder — yt-dlp did not '
-                  're-download it.')
-            print('   Verifying that it really is this video (comparing durations)...')
-            verdict = existing_file_matches_video(final_path, url, section_args,
-                                                  cookies_from_browser)
-            if verdict is True:
-                print('   ✓ Length matches — recorded as this video.')
-            else:
-                print('   ⚠️  Could not confirm it is this video'
-                      + (' (the length does NOT match).' if verdict is False else '.'))
-                print('   Not recording it, so nothing is skipped by mistake next time.')
-                print('   Use --force-download (or a different --output-dir) to fetch a '
-                      'fresh copy.')
-                return
         # Pobranie mogło „się udać" dopiero na strategii awaryjnej, w gorszej
         # jakości. Bez tego ostrzeżenia taki plik trafia do indeksu i przy
         # kolejnych uruchomieniach film jest cicho pomijany jako pobrany.
@@ -2377,7 +2420,7 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
                            generate_subs, whisper_model, source_lang, translate_to,
                            initial_prompt, also_vtt, burn, embed, engine, qwen_model,
                            translate_engine, translate_model, inserts_opts,
-                           fresh_download=True, linux_codec=DEFAULT_LINUX_CODEC):
+                           fresh_download=True, linux_codec=DEFAULT_LINUX_CODEC, section_args=None):
     """
     Kroki po pobraniu, wspólne dla świeżo pobranego pliku i dla pliku, który już
     był na dysku (wykryty duplikat): remux/preset DaVinci, napisy, inserty.
@@ -2420,7 +2463,13 @@ def _post_process_download(final_path, url, output_dir, format_choice, resolve,
     # Insert / interstitial detection (and optional cutting)
     if inserts_opts:
         if final_path:
-            process_inserts(final_path, url=url, output_dir=output_dir, **inserts_opts)
+            insert_url = url
+            if section_signature(section_args) != 'full':
+                insert_url = None
+                if not (inserts_opts.get('from_list') or inserts_opts.get('smart')):
+                    print('\nℹ️  Fragment download: SponsorBlock timestamps refer to the full video. '
+                          'Using local insert detection instead.')
+            process_inserts(final_path, url=insert_url, output_dir=output_dir, **inserts_opts)
         else:
             print('\n⚠️  Could not find the downloaded file for insert detection.')
 
