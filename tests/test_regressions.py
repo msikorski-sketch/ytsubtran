@@ -219,6 +219,12 @@ def test_gemini_empty_translation_falls_back(gemini):
     assert yt.translate_texts_gemini(['Hello'], 'pl', 'en') is None
 
 
+def test_gemini_translation_uses_the_supported_default_model(gemini):
+    calls = gemini([['Cześć']])
+    assert yt.translate_texts_gemini(['Hello'], 'pl', 'en') == ['Cześć']
+    assert calls[0]['model'] == yt.DEFAULT_TRANSLATE_MODEL == 'gemini-3.5-flash-lite'
+
+
 def test_gemini_client_initialization_failure_falls_back(monkeypatch, gemini):
     gemini([])
     def fail(**kwargs):

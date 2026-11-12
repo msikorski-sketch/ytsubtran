@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Changed
+- Gemini subtitle translation defaults to `gemini-3.5-flash-lite`, Google's
+  recommended replacement for the deprecated `gemini-2.5-flash`. Explicit
+  `--translate-model` choices remain available.
 - **`--source-lang` now defaults to `auto`** instead of `pl`. Forcing Polish on
   English audio made Whisper produce gibberish; the language is now detected from
   several samples (skipping the intro). Pass `--source-lang` to force it.

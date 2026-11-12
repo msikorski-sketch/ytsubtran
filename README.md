@@ -234,7 +234,9 @@ terminology stays consistent and grammar flows across segment boundaries — the
 biggest win for Japanese/Chinese/Korean sources. It reuses the same API key as
 `--smart-inserts`/`--organize` (asks once, saves to `~/.ytsubtran.json`) and falls
 back to Google Translate automatically on any error. Pick the model with
-`--translate-model` (default: `gemini-2.5-flash`).
+`--translate-model` (default: `gemini-3.5-flash-lite`). This replaces the deprecated
+Gemini 2.5 Flash translation default; access to that older model is restricted to
+prior users, according to [Google's deprecation schedule](https://aistudio.google.com/docs/deprecations).
 
 If Google translation fails for any non-empty segment, the tool reports the
 failed count and keeps the original subtitles. It does not write translated

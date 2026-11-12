@@ -7,6 +7,8 @@ import json
 import sys
 import shutil
 
+DEFAULT_TRANSLATE_MODEL = 'gemini-3.5-flash-lite'
+
 # Wymuś UTF-8 na wyjściu konsoli (Windows) — inaczej polskie znaki (ł, ż...)
 # i emoji powodują UnicodeEncodeError przy domyślnym kodowaniu cp1252.
 try:
@@ -239,7 +241,7 @@ def parse_gemini_translation(raw, expected_n):
     return [str(item).strip() if item is not None else '' for item in data]
 
 
-def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-flash',
+def translate_texts_gemini(texts, target_lang, source_lang, model=DEFAULT_TRANSLATE_MODEL,
                            batch_size=300):
     """
     Tłumaczy segmenty napisów przez Gemini — cały transkrypt z kontekstem,
@@ -327,7 +329,7 @@ def translate_texts_gemini(texts, target_lang, source_lang, model='gemini-2.5-fl
     return translated
 
 
-def _translate_subtitle_texts(texts, target_lang, source_lang, engine='google', model='gemini-2.5-flash'):
+def _translate_subtitle_texts(texts, target_lang, source_lang, engine='google', model=DEFAULT_TRANSLATE_MODEL):
     translated = None
     if engine == 'gemini':
         print(f'   Translator: Gemini ({model})')
@@ -344,7 +346,7 @@ def _translate_subtitle_texts(texts, target_lang, source_lang, engine='google', 
 
 
 def translate_subtitle_file(path, translate_to, source_lang='auto', output_dir=None,
-                            also_vtt=False, translate_engine='google', translate_model='gemini-2.5-flash'):
+                            also_vtt=False, translate_engine='google', translate_model=DEFAULT_TRANSLATE_MODEL):
     """Translate an existing SRT/WebVTT without reading media or loading ASR."""
     import subtitle_workflow as sw
 
@@ -587,7 +589,7 @@ def generate_subtitles(video_file, model_size='base', source_lang='pl',
                        translate_to=None, initial_prompt=None, output_dir=None,
                        also_vtt=False, burn=False, embed=False,
                        engine='auto', qwen_model=None,
-                       translate_engine='google', translate_model='gemini-2.5-flash',
+                       translate_engine='google', translate_model=DEFAULT_TRANSLATE_MODEL,
                        force_transcribe=False, cache_source=None):
     """
     Generuje napisy wybranym silnikiem ASR, opcjonalnie z tłumaczeniem.
@@ -903,7 +905,7 @@ def _transcribe_with_whisper(video_file, model_size, source_lang, initial_prompt
 
 def _finalize_subtitle_files(video_file, segments, full_text, detected_lang,
                              translate_to, output_dir, also_vtt, burn, embed,
-                             translate_engine='google', translate_model='gemini-2.5-flash'):
+                             translate_engine='google', translate_model=DEFAULT_TRANSLATE_MODEL):
     """
     Wspólny finał dla wszystkich silników ASR: zapis napisów w języku
     oryginału, opcjonalne tłumaczenie segmentów (Gemini z pełnym kontekstem
@@ -2216,7 +2218,7 @@ def download_youtube(raw_url, format_choice='mp4', generate_subs=False, whisper_
                      cookies_from_browser=None, output_dir=None, also_vtt=False,
                      burn=False, embed=False, inserts_opts=None, section_args=None,
                      engine='auto', qwen_model=None,
-                     translate_engine='google', translate_model='gemini-2.5-flash',
+                     translate_engine='google', translate_model=DEFAULT_TRANSLATE_MODEL,
                      resolve=False, force_download=False, limit_rate=None,
                      linux_codec=DEFAULT_LINUX_CODEC, force_transcribe=False):
     url = extract_url(raw_url)
@@ -3127,9 +3129,9 @@ Examples:
     )
     parser.add_argument(
         '--translate-model',
-        default='gemini-2.5-flash',
+        default=DEFAULT_TRANSLATE_MODEL,
         metavar='MODEL',
-        help='Gemini model for --translate-engine gemini (default: gemini-2.5-flash).'
+        help=f'Gemini model for --translate-engine gemini (default: {DEFAULT_TRANSLATE_MODEL}).'
     )
     parser.add_argument(
         '--prompt',
