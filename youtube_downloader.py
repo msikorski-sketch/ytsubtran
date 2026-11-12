@@ -3043,6 +3043,12 @@ Examples:
         """
     )
     parser.add_argument('url', nargs='?', help='YouTube video link')
+    parser.add_argument('--doctor', action='store_true',
+                        help='Inspect the active installation, dependencies, GPU and key presence without API calls.')
+    parser.add_argument('--json', action='store_true',
+                        help='With --doctor: emit a machine-readable report instead of human-readable output.')
+    parser.add_argument('--set-gemini-key', action='store_true',
+                        help='Save a Gemini API key using a hidden terminal prompt. Never pass the key as an argument.')
     parser.add_argument(
         '--file',
         help='Path to a local video/audio file, or an SRT/VTT to translate with --translate-to.'
@@ -3384,6 +3390,31 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    if args.json and not args.doctor:
+        parser.error('--json is available only with --doctor.')
+    if args.doctor:
+        if (args.url or args.file or args.subtitle_file or args.organize or args.watch_clipboard
+                or args.set_output_dir or args.set_gemini_key):
+            parser.error('--doctor is a standalone, read-only action.')
+        import diagnostics
+        report = diagnostics.build_report(__file__, APP_CONFIG_PATH)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            diagnostics.print_report(report)
+        return
+    if args.set_gemini_key:
+        if (args.url or args.file or args.subtitle_file or args.organize or args.watch_clipboard
+                or args.set_output_dir):
+            parser.error('--set-gemini-key is a standalone action.')
+        import inserts
+        key = inserts.get_gemini_key(force_prompt=True)
+        if not key or load_app_config().get('gemini_api_key') != key:
+            print('✗ No Gemini key was saved. Run this command in an interactive terminal and retry.')
+            sys.exit(1)
+        print('✓ Gemini key saved. API access has not been verified; --doctor shows key presence only.')
+        return
 
     subtitle_input = args.subtitle_file
     if not subtitle_input and args.file and os.path.splitext(args.file)[1].lower() in ('.srt', '.vtt'):

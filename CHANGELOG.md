@@ -14,6 +14,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   generates them, as before).
 
 ### Added
+- **Local diagnostics:** `--doctor` (and `--doctor --json`) reports the actual
+  interpreter/source, commit/local changes, dependency import errors, GPU access,
+  model cache, free disk space and Gemini key presence without API requests or
+  credential disclosure.
+- **Hidden Gemini key setup:** `--set-gemini-key` saves a key atomically with private
+  file permissions and preserves other settings. Non-interactive or failed writes
+  return an error instead of reporting success.
 - **Reusable transcriptions:** completed ASR is saved atomically before translation
   and automatically reused for matching source metadata, ASR settings and library
   versions. Translation retries, new target languages and extra subtitle outputs

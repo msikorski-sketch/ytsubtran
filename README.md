@@ -100,6 +100,8 @@ That's it. Subtitles (`.srt` + `.txt`) appear next to the downloaded file.
 | Reuse a saved cut list (no second Gemini call) | `--from-list FILE` |
 | Snap cuts to scene boundaries (frame-accurate) | `--snap-cuts` |
 | Catalog a folder of unnamed lecture videos | `--organize "C:\downloads"` |
+| Diagnose the active installation and GPU | `--doctor` (or `--doctor --json`) |
+| Configure a Gemini key without putting it in shell history | `--set-gemini-key` |
 
 ## 📦 Installation
 
@@ -146,6 +148,43 @@ python -c "import torch; print(torch.cuda.is_available())"   # should print True
 ```
 
 The script auto-detects the GPU, reports its name and VRAM, transcribes with `fp16`, and falls back to CPU if it runs out of memory. Match the `cu1XX` number to your driver (check `nvidia-smi`).
+
+### Check the installation (`--doctor`)
+
+```bash
+ytsubtran --doctor
+ytsubtran --doctor --json
+```
+
+The report identifies the Python executable, imported source path, commit and local
+changes, ffmpeg/ffprobe, ASR and translation packages, CUDA access, NVIDIA driver,
+cached Whisper model filenames and free disk space. This helps catch an installed
+command pointing at a different checkout. It imports dependencies but does not
+load model weights, download models, change settings or call external APIs.
+Package presence and a configured key do not prove that a remote service is working.
+
+For Gemini translation, configure the key in your own terminal:
+
+```bash
+ytsubtran --set-gemini-key
+```
+
+The key is entered with a hidden prompt, not as a command argument. It is saved
+atomically in `~/.ytsubtran.json`, preserving other settings; on POSIX the replaced
+file is owner-readable/writable only. `--doctor` shows presence and source, never
+the value. `GEMINI_API_KEY`/`GOOGLE_API_KEY` environment variables still take
+precedence over the saved key. Saving a key does not make a paid API request or
+verify access.
+
+Local validation on 2026-11-13 used Python 3.14.8, PyTorch 2.14.0+cu126,
+Whisper 20250625 and an RTX 4060 Ti (8 GB). A synthetic 13.68-second clip produced
+three English subtitle segments with the `base` model. The first CLI run took
+8.27 s, reuse took 0.12 s and a forced rerun took 5.08 s in that single test.
+This checks the GPU/cache workflow, not transcription accuracy: the small model
+made two word substitutions in synthesized speech. Polish reference subtitles
+were parsed by mpv and their diacritics checked on a rendered frame. Live Google
+translation returned HTTP 429; Gemini needs a user-provided key to complete that
+part of the end-to-end test.
 
 ## 🧠 Whisper models
 

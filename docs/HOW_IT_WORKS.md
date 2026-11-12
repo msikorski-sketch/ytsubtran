@@ -774,18 +774,34 @@ The key part is the **console entry point**:
 ytsubtran = "youtube_downloader:main"
 
 [tool.setuptools]
-py-modules = ["youtube_downloader", "inserts", "organize", "qwen_engine", "subtitle_workflow"]
+py-modules = ["youtube_downloader", "inserts", "organize", "qwen_engine", "subtitle_workflow", "diagnostics"]
 ```
 
 This tells pip to generate a small launcher named `ytsubtran` that calls our
 `main()` function — which is exactly why `main()` exists as a function instead of
 living inside the `if __name__ == '__main__'` block. After installation, users run
 `ytsubtran "URL" --subs` instead of `python youtube_downloader.py …`. Because it's a
-flat-module project, `py-modules` lists all five importable `.py` modules. In
+flat-module project, `py-modules` lists all six importable `.py` modules. In
 particular, omitting `qwen_engine` would silently force installed commands back to
 Whisper even when Qwen was explicitly requested.
 
-### 10.2 Tests and continuous integration
+### 10.2 Diagnostics and local key setup
+
+`--doctor` is handled before input/output setup. `diagnostics.py` reports the actual
+module and Python paths, repository revision and local changes, distribution
+versions and import failures, ffmpeg/ffprobe, PyTorch CUDA availability and a
+separate NVIDIA driver probe. Imports do not load model weights. Key diagnostics
+return a boolean and source label, not a credential or the rest of the config.
+Import output is captured so `--doctor --json` remains machine-readable. API access
+is explicitly untested: the command neither downloads models nor sends requests.
+
+`--set-gemini-key` is a standalone interactive action. It reuses the hidden getpass
+prompt, atomically replaces the merged config through `subtitle_workflow.py`, and
+verifies that the key was actually saved. Temporary files have private permissions;
+no key values are printed or accepted as arguments. Environment keys continue to
+override saved keys, and saving a key is not an API authentication test.
+
+### 10.3 Tests and continuous integration
 
 The pure, side-effect-free helpers (`extract_url`, `format_timestamp_srt`,
 `diagnose_failure`, `lang_name`) are covered by `pytest` tests in `tests/`. They

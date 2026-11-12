@@ -359,7 +359,7 @@ def get_gemini_key(force_prompt=False):
             pass
     if not sys.stdin or not sys.stdin.isatty():
         return None
-    print('\nA Gemini API key is required for --smart-inserts.')
+    print('\nGemini translation, smart inserts and cataloging require a Gemini API key.')
     print('Get a free key at: https://aistudio.google.com/apikey')
     if force_prompt and (os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')):
         print('  Note: GEMINI_API_KEY is set in your environment and overrides the')
@@ -382,8 +382,8 @@ def get_gemini_key(force_prompt=False):
             except Exception:
                 cfg = {}
             cfg['gemini_api_key'] = key
-            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            from subtitle_workflow import atomic_write_text
+            atomic_write_text(CONFIG_PATH, json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
             print(f'✓ Saved to {CONFIG_PATH} (delete that file to remove the key).')
         except OSError:
             pass

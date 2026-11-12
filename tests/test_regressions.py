@@ -390,6 +390,7 @@ def test_built_wheel_imports_qwen_outside_checkout(tmp_path):
     with zipfile.ZipFile(wheel) as archive:
         assert 'qwen_engine.py' in archive.namelist()
         assert 'subtitle_workflow.py' in archive.namelist()
+        assert 'diagnostics.py' in archive.namelist()
     installed = tmp_path/'installed'
     install = subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-index', '--no-deps',
                               '--no-compile', '--target', str(installed), str(wheel)],
@@ -414,3 +415,9 @@ def test_built_wheel_imports_qwen_outside_checkout(tmp_path):
                                  text=True, capture_output=True)
     assert translated.returncode == 0, translated.stdout + translated.stderr
     assert (tmp_path/'captions_EN.srt').read_text() == source_subtitles.read_text()
+    doctor = subprocess.run([sys.executable, '-I', '-c', code, '--doctor', '--json'], cwd=tmp_path,
+                            text=True, capture_output=True)
+    assert doctor.returncode == 0, doctor.stdout + doctor.stderr
+    report = json.loads(doctor.stdout)
+    assert report['application']['module'] == str(installed/'youtube_downloader.py')
+    assert report['network_tested'] is False
